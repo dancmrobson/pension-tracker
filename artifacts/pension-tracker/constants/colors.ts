@@ -132,6 +132,37 @@ export const themes: Theme[] = [
     light: makeLight("#5B21B6", "#7C3AED"),
     dark: makeDark("#A78BFA", "#C4B5FD"),
   },
+  // — Fun & colourful —
+  {
+    id: "coral",
+    name: "Coral",
+    light: makeLight("#E84545", "#FF9F43"),
+    dark: makeDark("#FF7676", "#FFBE76"),
+  },
+  {
+    id: "teal",
+    name: "Teal",
+    light: makeLight("#00897B", "#00C9B1"),
+    dark: makeDark("#26C6B8", "#64FFDA"),
+  },
+  {
+    id: "sunset",
+    name: "Sunset",
+    light: makeLight("#D35400", "#F1C40F"),
+    dark: makeDark("#F0935A", "#F5D76E"),
+  },
+  {
+    id: "berry",
+    name: "Berry",
+    light: makeLight("#C2185B", "#9C27B0"),
+    dark: makeDark("#F06292", "#CE93D8"),
+  },
+  {
+    id: "ocean",
+    name: "Ocean",
+    light: makeLight("#0277BD", "#00BCD4"),
+    dark: makeDark("#4FC3F7", "#4DD0E1"),
+  },
 ];
 
 export const defaultThemeId = "navy";
