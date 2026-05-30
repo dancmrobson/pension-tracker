@@ -72,7 +72,7 @@ function computeGeometry(
   const innerW = chartW - pad.left - pad.right;
   const innerH = chartH - pad.top - pad.bottom;
 
-  if (data.length === 0) {
+  if (data.length === 0 || innerW <= 0 || innerH <= 0) {
     return {
       points: [] as ChartPoint[],
       xLabels: [] as { label: string; x: number }[],
@@ -205,7 +205,6 @@ function ChartSvg({
         </LinearGradient>
       </Defs>
 
-      {/* Y-axis grid + labels */}
       {yTicks.map((tick, i) => (
         <React.Fragment key={i}>
           <Line
@@ -230,7 +229,6 @@ function ChartSvg({
         </React.Fragment>
       ))}
 
-      {/* X-axis labels — hidden while scanning */}
       {!activePt &&
         xLabels.map((lbl, i) => (
           <SvgText
@@ -246,10 +244,8 @@ function ChartSvg({
           </SvgText>
         ))}
 
-      {/* Area fill */}
       {fillPath ? <Path d={fillPath} fill="url(#cg)" /> : null}
 
-      {/* Line */}
       {points.length > 1 ? (
         <Path
           d={linePath}
@@ -261,7 +257,6 @@ function ChartSvg({
         />
       ) : null}
 
-      {/* Dots — skip the active one, drawn separately below */}
       {points.map((pt, i) => {
         if (pt.date === activeDate) return null;
         return (
@@ -277,7 +272,6 @@ function ChartSvg({
         );
       })}
 
-      {/* Crosshair + tooltip */}
       {activePt && (
         <>
           <Line
@@ -337,14 +331,26 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
   const { width: winW, height: winH } = useWindowDimensions();
   const isLandscape = winW > winH && Platform.OS !== "web";
 
+  // Measured width of the portrait container — avoids hardcoding offsets
+  const [containerWidth, setContainerWidth] = useState(0);
+
   const [activeDate, setActiveDate] = useState<string | null>(null);
 
+  // Refs so PanResponder closures always see the latest geometry
   const portraitPtsRef = useRef<ChartPoint[]>([]);
   const landscapePtsRef = useRef<ChartPoint[]>([]);
 
+  // Capture the touch-start X; subsequent moves use startX + gestureState.dx
+  // so vertical finger movement can't corrupt the horizontal reading
+  const portStartX = useRef(0);
+  const landStartX = useRef(0);
+
   const portraitGeo = useMemo(
-    () => computeGeometry(data, winW - 32, height, PORT_PAD),
-    [data, winW, height]
+    () =>
+      containerWidth > 0
+        ? computeGeometry(data, containerWidth, height, PORT_PAD)
+        : { points: [] as ChartPoint[], xLabels: [], yTicks: [], innerW: 0, innerH: 0 },
+    [data, containerWidth, height]
   );
   const landscapeGeo = useMemo(
     () => computeGeometry(data, winW, winH, LAND_PAD),
@@ -372,14 +378,18 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt) =>
+      onPanResponderGrant: (evt) => {
+        portStartX.current = evt.nativeEvent.locationX;
+        setActiveDate(findNearest(portraitPtsRef.current, portStartX.current));
+      },
+      onPanResponderMove: (_, gestureState) => {
         setActiveDate(
-          findNearest(portraitPtsRef.current, evt.nativeEvent.locationX)
-        ),
-      onPanResponderMove: (evt) =>
-        setActiveDate(
-          findNearest(portraitPtsRef.current, evt.nativeEvent.locationX)
-        ),
+          findNearest(
+            portraitPtsRef.current,
+            portStartX.current + gestureState.dx
+          )
+        );
+      },
       onPanResponderRelease: () => setActiveDate(null),
       onPanResponderTerminate: () => setActiveDate(null),
     })
@@ -389,14 +399,18 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt) =>
+      onPanResponderGrant: (evt) => {
+        landStartX.current = evt.nativeEvent.locationX;
+        setActiveDate(findNearest(landscapePtsRef.current, landStartX.current));
+      },
+      onPanResponderMove: (_, gestureState) => {
         setActiveDate(
-          findNearest(landscapePtsRef.current, evt.nativeEvent.locationX)
-        ),
-      onPanResponderMove: (evt) =>
-        setActiveDate(
-          findNearest(landscapePtsRef.current, evt.nativeEvent.locationX)
-        ),
+          findNearest(
+            landscapePtsRef.current,
+            landStartX.current + gestureState.dx
+          )
+        );
+      },
       onPanResponderRelease: () => setActiveDate(null),
       onPanResponderTerminate: () => setActiveDate(null),
     })
@@ -414,17 +428,23 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
 
   return (
     <>
-      {/* Portrait chart */}
-      <View style={styles.container} {...portraitPan.panHandlers}>
-        <ChartSvg
-          data={data}
-          chartW={winW - 32}
-          chartH={height}
-          pad={PORT_PAD}
-          activeDate={activeDate}
-          colors={colors}
-          fontSize={10}
-        />
+      {/* Portrait chart — width measured from actual container, not screen */}
+      <View
+        style={styles.container}
+        onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+        {...portraitPan.panHandlers}
+      >
+        {containerWidth > 0 && (
+          <ChartSvg
+            data={data}
+            chartW={containerWidth}
+            chartH={height}
+            pad={PORT_PAD}
+            activeDate={activeDate}
+            colors={colors}
+            fontSize={10}
+          />
+        )}
       </View>
 
       {/* Fullscreen landscape modal — auto-shows on rotation */}
@@ -461,7 +481,7 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
 
 const styles = StyleSheet.create({
   container: {
-    alignItems: "flex-start",
+    alignSelf: "stretch",
   },
   empty: {
     alignItems: "center",
