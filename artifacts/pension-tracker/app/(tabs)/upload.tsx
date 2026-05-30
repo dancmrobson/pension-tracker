@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
-import { useScrollToTop } from "@react-navigation/native";
+import { useFocusEffect, useScrollToTop } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import React, { useRef, useState } from "react";
 import {
@@ -40,6 +40,7 @@ export default function UploadScreen() {
   const { name, saveName } = useUserName();
   const scrollRef = useRef(null);
   useScrollToTop(scrollRef);
+  const savedRef = useRef(false);
 
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
@@ -54,6 +55,7 @@ export default function UploadScreen() {
   const createMutation = useCreatePensionEntry({
     mutation: {
       onSuccess: () => {
+        savedRef.current = true;
         queryClient.invalidateQueries({ queryKey: getListPensionEntriesQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetPensionInsightsQueryKey() });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -84,6 +86,15 @@ export default function UploadScreen() {
     setAnalyzeMessage(null);
     setAnalyzed(false);
   };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (savedRef.current) {
+        resetForm();
+        savedRef.current = false;
+      }
+    }, [])
+  );
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
