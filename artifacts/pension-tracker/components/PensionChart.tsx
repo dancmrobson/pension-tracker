@@ -69,7 +69,7 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
 
     const labelCount = Math.min(data.length, 4);
     const step = Math.max(1, Math.floor(data.length / labelCount));
-    const xLabels = data
+    const rawLabelCandidates = data
       .filter((_, i) => i % step === 0 || i === data.length - 1)
       .map((d) => {
         const t = new Date(d.date + "T00:00:00").getTime();
@@ -78,6 +78,18 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
           : PAD.left + ((t - minT) / tRange) * innerW;
         return { label: formatShortDate(d.date), x };
       });
+
+    // Deduplicate: skip if same month label or too close to the previous kept label
+    const MIN_LABEL_GAP = 42;
+    const seenLabels = new Set<string>();
+    let lastKeptX = -Infinity;
+    const xLabels = rawLabelCandidates.filter(({ label, x }) => {
+      if (seenLabels.has(label)) return false;
+      if (x - lastKeptX < MIN_LABEL_GAP) return false;
+      seenLabels.add(label);
+      lastKeptX = x;
+      return true;
+    });
 
     const tickCount = 4;
     const yTicks = Array.from({ length: tickCount + 1 }, (_, i) => {

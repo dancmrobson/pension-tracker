@@ -94,7 +94,7 @@ export default function DashboardScreen() {
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={[
         styles.container,
-        { paddingTop: topPad + 16 },
+        { paddingTop: topPad + 4 },
       ]}
       refreshControl={
         <RefreshControl

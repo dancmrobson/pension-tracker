@@ -81,7 +81,7 @@ export default function HistoryScreen() {
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={[
         styles.container,
-        { paddingTop: topPad + 16 },
+        { paddingTop: topPad + 4 },
       ]}
       data={sortedEntries}
       keyExtractor={(item) => String(item.id)}

@@ -165,7 +165,7 @@ export default function UploadScreen() {
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={[
         styles.container,
-        { paddingTop: topPad + 16 },
+        { paddingTop: topPad + 4 },
       ]}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
