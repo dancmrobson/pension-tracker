@@ -2,6 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
 import { useFocusEffect, useScrollToTop } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import React, { useRef, useState } from "react";
@@ -24,8 +26,10 @@ import { useUserName } from "@/hooks/useUserName";
 import {
   useAnalyzePensionImage,
   useCreatePensionEntry,
+  useUploadContributionsCsv,
   getListPensionEntriesQueryKey,
   getGetPensionInsightsQueryKey,
+  getListContributionsQueryKey,
 } from "@workspace/api-client-react";
 
 function todayString(): string {
@@ -42,6 +46,7 @@ export default function UploadScreen() {
   useScrollToTop(scrollRef);
   const savedRef = useRef(false);
 
+  // Screenshot upload state
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [editDate, setEditDate] = useState(todayString());
@@ -50,6 +55,10 @@ export default function UploadScreen() {
   const [confidence, setConfidence] = useState<string | null>(null);
   const [analyzeMessage, setAnalyzeMessage] = useState<string | null>(null);
   const [analyzed, setAnalyzed] = useState(false);
+
+  // CSV upload state
+  const [csvFileName, setCsvFileName] = useState<string | null>(null);
+  const [csvUploading, setCsvUploading] = useState(false);
 
   const analyzeMutation = useAnalyzePensionImage();
   const createMutation = useCreatePensionEntry({
@@ -72,6 +81,25 @@ export default function UploadScreen() {
       },
       onError: () => {
         Alert.alert("Error", "Failed to save entry. Please try again.");
+      },
+    },
+  });
+
+  const csvMutation = useUploadContributionsCsv({
+    mutation: {
+      onSuccess: (data) => {
+        queryClient.invalidateQueries({ queryKey: getListContributionsQueryKey() });
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert(
+          "Contributions Imported",
+          `Imported ${data.upserted} monthly period${data.upserted === 1 ? "" : "s"} from ${data.rows_parsed} row${data.rows_parsed === 1 ? "" : "s"}.`
+        );
+        setCsvFileName(null);
+        setCsvUploading(false);
+      },
+      onError: () => {
+        Alert.alert("Import Failed", "Could not parse the CSV. Make sure it's a contribution history export from your pension provider.");
+        setCsvUploading(false);
       },
     },
   });
@@ -163,6 +191,38 @@ export default function UploadScreen() {
         total_contributions: numContrib != null && !isNaN(numContrib) ? String(numContrib) : null,
       },
     });
+  };
+
+  const pickAndUploadCsv = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["text/csv", "text/comma-separated-values", "application/csv", "public.comma-separated-values-text", "*/*"],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      const fileName = asset.name ?? "contributions.csv";
+
+      if (!fileName.toLowerCase().endsWith(".csv")) {
+        Alert.alert("Wrong File Type", "Please select a CSV file exported from your pension provider.");
+        return;
+      }
+
+      setCsvFileName(fileName);
+      setCsvUploading(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      const csvText = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+
+      csvMutation.mutate({ data: { csv_text: csvText } });
+    } catch {
+      Alert.alert("Error", "Could not read the file. Please try again.");
+      setCsvUploading(false);
+    }
   };
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -411,6 +471,74 @@ export default function UploadScreen() {
         </View>
       )}
 
+      {/* ---- Contribution History CSV ---- */}
+      <View style={styles.divider}>
+        <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+        <Text style={[styles.dividerText, { color: colors.mutedForeground }]}>OR</Text>
+        <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+      </View>
+
+      <View
+        style={[
+          styles.csvCard,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+            borderRadius: colors.radius,
+          },
+        ]}
+      >
+        <View style={styles.csvHeader}>
+          <View style={[styles.csvIconWrap, { backgroundColor: colors.muted }]}>
+            <Ionicons name="document-text-outline" size={24} color={colors.accent} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.csvTitle, { color: colors.foreground }]}>
+              Contribution History
+            </Text>
+            <Text style={[styles.csvSubtitle, { color: colors.mutedForeground }]}>
+              Import a CSV from your pension provider to see employer vs. employee contributions on your chart
+            </Text>
+          </View>
+        </View>
+
+        {csvFileName && !csvMutation.isSuccess ? (
+          <View style={[styles.csvFileRow, { backgroundColor: colors.secondary, borderRadius: colors.radius / 2 }]}>
+            <Ionicons name="document" size={16} color={colors.mutedForeground} />
+            <Text style={[styles.csvFileName, { color: colors.foreground }]} numberOfLines={1}>
+              {csvFileName}
+            </Text>
+          </View>
+        ) : null}
+
+        <TouchableOpacity
+          style={[
+            styles.csvBtn,
+            {
+              backgroundColor: colors.accent,
+              borderRadius: colors.radius,
+              opacity: csvUploading ? 0.6 : 1,
+            },
+          ]}
+          onPress={pickAndUploadCsv}
+          disabled={csvUploading}
+          activeOpacity={0.8}
+        >
+          {csvUploading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Ionicons name="cloud-upload-outline" size={18} color="#fff" />
+              <Text style={styles.csvBtnText}>Choose CSV File</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <Text style={[styles.csvHint, { color: colors.mutedForeground }]}>
+          Expects columns: date, contribution type, amount. Re-uploading replaces existing records.
+        </Text>
+      </View>
+
       <View
         style={{
           height: Platform.OS === "web" ? 34 : insets.bottom + 90,
@@ -550,5 +678,76 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontFamily: "Inter_600SemiBold",
+  },
+  divider: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginVertical: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+  },
+  csvCard: {
+    borderWidth: 1,
+    padding: 16,
+    gap: 14,
+    marginBottom: 14,
+  },
+  csvHeader: {
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "flex-start",
+  },
+  csvIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  csvTitle: {
+    fontSize: 15,
+    fontFamily: "Inter_600SemiBold",
+    marginBottom: 4,
+  },
+  csvSubtitle: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 18,
+  },
+  csvFileRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 10,
+  },
+  csvFileName: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+  },
+  csvBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    height: 48,
+  },
+  csvBtnText: {
+    color: "#fff",
+    fontSize: 15,
+    fontFamily: "Inter_600SemiBold",
+  },
+  csvHint: {
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 16,
+    opacity: 0.75,
   },
 });

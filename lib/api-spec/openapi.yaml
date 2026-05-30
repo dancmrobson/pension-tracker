@@ -110,6 +110,40 @@ paths:
               schema:
                 $ref: "#/components/schemas/PensionInsights"
 
+  /pension/contributions:
+    get:
+      operationId: listContributions
+      tags: [pension]
+      summary: List all contribution entries
+      responses:
+        "200":
+          description: List of contributions ordered by date
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ContributionEntry"
+
+  /pension/contributions/upload:
+    post:
+      operationId: uploadContributionsCsv
+      tags: [pension]
+      summary: Parse and upsert a contribution history CSV
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadContributionsCsvBody"
+      responses:
+        "200":
+          description: Upload result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadContributionsCsvResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -232,3 +266,48 @@ components:
           type: boolean
       required:
         - success
+
+    ContributionEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        contribution_date:
+          type: string
+          description: Date in YYYY-MM-DD format
+        employee_amount:
+          type: string
+          description: Employee contribution amount as decimal string
+        employer_amount:
+          type: string
+          description: Employer contribution amount as decimal string
+        created_at:
+          type: string
+      required:
+        - id
+        - contribution_date
+        - employee_amount
+        - employer_amount
+        - created_at
+
+    UploadContributionsCsvBody:
+      type: object
+      properties:
+        csv_text:
+          type: string
+          description: Raw CSV text content
+      required:
+        - csv_text
+
+    UploadContributionsCsvResponse:
+      type: object
+      properties:
+        upserted:
+          type: integer
+          description: Number of date rows upserted
+        rows_parsed:
+          type: integer
+          description: Total CSV data rows parsed
+      required:
+        - upserted
+        - rows_parsed

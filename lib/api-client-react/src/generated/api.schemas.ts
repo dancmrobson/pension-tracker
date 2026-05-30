@@ -62,3 +62,26 @@ export interface DeletePensionEntryResponse {
   success: boolean;
 }
 
+export interface ContributionEntry {
+  id: number;
+  /** Date in YYYY-MM-DD format */
+  contribution_date: string;
+  /** Employee contribution amount as decimal string */
+  employee_amount: string;
+  /** Employer contribution amount as decimal string */
+  employer_amount: string;
+  created_at: string;
+}
+
+export interface UploadContributionsCsvBody {
+  /** Raw CSV text content */
+  csv_text: string;
+}
+
+export interface UploadContributionsCsvResponse {
+  /** Number of date rows upserted */
+  upserted: number;
+  /** Total CSV data rows parsed */
+  rows_parsed: number;
+}
+

@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { asc, eq } from "drizzle-orm";
-import { db, pensionEntriesTable } from "@workspace/db";
+import { asc, eq, lte, sql } from "drizzle-orm";
+import { db, pensionEntriesTable, contributionEntriesTable } from "@workspace/db";
 import { openai } from "@workspace/integrations-openai-ai-server";
 
 const pensionRouter = Router();
@@ -14,6 +14,49 @@ function serializeEntry(e: typeof pensionEntriesTable.$inferSelect) {
     notes: e.notes ?? null,
     created_at: e.createdAt instanceof Date ? e.createdAt.toISOString() : String(e.createdAt),
   };
+}
+
+function serializeContribution(e: typeof contributionEntriesTable.$inferSelect) {
+  return {
+    id: e.id,
+    contribution_date: e.contributionDate,
+    employee_amount: e.employeeAmount,
+    employer_amount: e.employerAmount,
+    created_at: e.createdAt instanceof Date ? e.createdAt.toISOString() : String(e.createdAt),
+  };
+}
+
+// Simple CSV line parser that handles quoted fields
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (const ch of line) {
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+    } else if (ch === "," && !inQuotes) {
+      result.push(current.trim());
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
+// Parse "£146.76" or "-£2.64" or "£1,234.56" → number
+function parseAmount(s: string): number {
+  const cleaned = s.replace(/[£,\s]/g, "");
+  const n = parseFloat(cleaned);
+  return isNaN(n) ? 0 : n;
+}
+
+// Parse "DD/MM/YYYY" → "YYYY-MM-DD"
+function parseDateDMY(s: string): string | null {
+  const m = s.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
 }
 
 pensionRouter.get("/pension/entries", async (req, res) => {
@@ -223,6 +266,108 @@ Reply ONLY with a JSON array of exactly 3 strings (no markdown):
   } catch (err) {
     req.log.error({ err }, "Failed to get pension insights");
     res.status(500).json({ error: "Failed to get insights" });
+  }
+});
+
+// ---- Contributions ----
+
+pensionRouter.get("/pension/contributions", async (req, res) => {
+  try {
+    const rows = await db
+      .select()
+      .from(contributionEntriesTable)
+      .orderBy(asc(contributionEntriesTable.contributionDate));
+    res.json(rows.map(serializeContribution));
+  } catch (err) {
+    req.log.error({ err }, "Failed to list contributions");
+    res.status(500).json({ error: "Failed to list contributions" });
+  }
+});
+
+pensionRouter.post("/pension/contributions/upload", async (req, res) => {
+  try {
+    const { csv_text } = req.body as { csv_text?: string };
+    if (!csv_text || typeof csv_text !== "string") {
+      res.status(400).json({ error: "csv_text is required" });
+      return;
+    }
+
+    const lines = csv_text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    if (lines.length < 2) {
+      res.status(400).json({ error: "CSV appears empty or has no data rows" });
+      return;
+    }
+
+    const headers = parseCSVLine(lines[0]).map((h) => h.toLowerCase().replace(/\s+/g, " ").trim());
+    const dateIdx = headers.findIndex((h) => h.includes("date"));
+    const typeIdx = headers.findIndex((h) => h.includes("type") || h.includes("contribution type"));
+    const amountIdx = headers.findIndex((h) => h.startsWith("amount") && !h.includes("invested"));
+
+    if (dateIdx === -1 || typeIdx === -1 || amountIdx === -1) {
+      res.status(400).json({
+        error: `Could not find required columns (date, type, amount). Found headers: ${headers.join(", ")}`,
+      });
+      return;
+    }
+
+    // Aggregate per date
+    const byDate = new Map<string, { employee: number; employer: number }>();
+    let rowsParsed = 0;
+
+    for (let i = 1; i < lines.length; i++) {
+      const fields = parseCSVLine(lines[i]);
+      if (fields.length < Math.max(dateIdx, typeIdx, amountIdx) + 1) continue;
+
+      const isoDate = parseDateDMY(fields[dateIdx]);
+      if (!isoDate) continue;
+
+      const type = fields[typeIdx].toLowerCase();
+      const amount = Math.abs(parseAmount(fields[amountIdx]));
+      if (amount === 0) continue;
+
+      rowsParsed++;
+      const existing = byDate.get(isoDate) ?? { employee: 0, employer: 0 };
+      if (type.includes("salary") || type.includes("employee") || type.includes("your")) {
+        if (!type.includes("employer")) existing.employee += amount;
+        else existing.employer += amount;
+      } else if (type.includes("employer")) {
+        existing.employer += amount;
+      } else {
+        existing.employee += amount;
+      }
+      byDate.set(isoDate, existing);
+    }
+
+    if (byDate.size === 0) {
+      res.status(400).json({ error: "No valid contribution rows found. Check CSV format." });
+      return;
+    }
+
+    const toInsert = Array.from(byDate.entries()).map(([date, amounts]) => ({
+      contributionDate: date,
+      employeeAmount: amounts.employee.toFixed(2),
+      employerAmount: amounts.employer.toFixed(2),
+    }));
+
+    await db
+      .insert(contributionEntriesTable)
+      .values(toInsert)
+      .onConflictDoUpdate({
+        target: contributionEntriesTable.contributionDate,
+        set: {
+          employeeAmount: sql`EXCLUDED.employee_amount`,
+          employerAmount: sql`EXCLUDED.employer_amount`,
+        },
+      });
+
+    res.json({ upserted: byDate.size, rows_parsed: rowsParsed });
+  } catch (err) {
+    req.log.error({ err }, "Failed to upload contributions CSV");
+    res.status(500).json({ error: "Failed to process CSV" });
   }
 });
 

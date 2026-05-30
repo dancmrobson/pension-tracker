@@ -83,3 +83,29 @@ export const GetPensionInsightsResponse = zod.object({
 })
 
 
+/**
+ * @summary List all contribution entries
+ */
+export const ListContributionsResponseItem = zod.object({
+  "id": zod.number(),
+  "contribution_date": zod.string().describe('Date in YYYY-MM-DD format'),
+  "employee_amount": zod.string().describe('Employee contribution amount as decimal string'),
+  "employer_amount": zod.string().describe('Employer contribution amount as decimal string'),
+  "created_at": zod.string()
+})
+export const ListContributionsResponse = zod.array(ListContributionsResponseItem)
+
+
+/**
+ * @summary Parse and upsert a contribution history CSV
+ */
+export const UploadContributionsCsvBody = zod.object({
+  "csv_text": zod.string().describe('Raw CSV text content')
+})
+
+export const UploadContributionsCsvResponse = zod.object({
+  "upserted": zod.number().describe('Number of date rows upserted'),
+  "rows_parsed": zod.number().describe('Total CSV data rows parsed')
+})
+
+

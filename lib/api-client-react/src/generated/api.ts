@@ -22,11 +22,14 @@ import type {
 import type {
   AnalyzeImageBody,
   AnalyzedPensionData,
+  ContributionEntry,
   CreatePensionEntryBody,
   DeletePensionEntryResponse,
   HealthStatus,
   PensionEntry,
-  PensionInsights
+  PensionInsights,
+  UploadContributionsCsvBody,
+  UploadContributionsCsvResponse
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -484,4 +487,152 @@ export function useGetPensionInsights<TData = Awaited<ReturnType<typeof getPensi
 
 
 
+
+export const getListContributionsUrl = () => {
+
+
+
+
+  return `/api/pension/contributions`
+}
+
+/**
+ * @summary List all contribution entries
+ */
+export const listContributions = async ( options?: RequestInit): Promise<ContributionEntry[]> => {
+
+  return customFetch<ContributionEntry[]>(getListContributionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListContributionsQueryKey = () => {
+    return [
+    `/api/pension/contributions`
+    ] as const;
+    }
+
+
+export const getListContributionsQueryOptions = <TData = Awaited<ReturnType<typeof listContributions>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listContributions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListContributionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listContributions>>> = ({ signal }) => listContributions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listContributions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListContributionsQueryResult = NonNullable<Awaited<ReturnType<typeof listContributions>>>
+export type ListContributionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List all contribution entries
+ */
+
+export function useListContributions<TData = Awaited<ReturnType<typeof listContributions>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listContributions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListContributionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getUploadContributionsCsvUrl = () => {
+
+
+
+
+  return `/api/pension/contributions/upload`
+}
+
+/**
+ * @summary Parse and upsert a contribution history CSV
+ */
+export const uploadContributionsCsv = async (uploadContributionsCsvBody: UploadContributionsCsvBody, options?: RequestInit): Promise<UploadContributionsCsvResponse> => {
+
+  return customFetch<UploadContributionsCsvResponse>(getUploadContributionsCsvUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      uploadContributionsCsvBody,)
+  }
+);}
+
+
+
+
+export const getUploadContributionsCsvMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadContributionsCsv>>, TError,{data: BodyType<UploadContributionsCsvBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof uploadContributionsCsv>>, TError,{data: BodyType<UploadContributionsCsvBody>}, TContext> => {
+
+const mutationKey = ['uploadContributionsCsv'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof uploadContributionsCsv>>, {data: BodyType<UploadContributionsCsvBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  uploadContributionsCsv(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UploadContributionsCsvMutationResult = NonNullable<Awaited<ReturnType<typeof uploadContributionsCsv>>>
+    export type UploadContributionsCsvMutationBody = BodyType<UploadContributionsCsvBody>
+    export type UploadContributionsCsvMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Parse and upsert a contribution history CSV
+ */
+export const useUploadContributionsCsv = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadContributionsCsv>>, TError,{data: BodyType<UploadContributionsCsvBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof uploadContributionsCsv>>,
+        TError,
+        {data: BodyType<UploadContributionsCsvBody>},
+        TContext
+      > => {
+      return useMutation(getUploadContributionsCsvMutationOptions(options));
+    }
 

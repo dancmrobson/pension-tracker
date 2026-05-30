@@ -1,2 +1,3 @@
 - [Orval duplicate-export fix](orval-duplicate-exports.md) — removing schemas from zod output config + keeping api-zod index.ts to only re-export generated/api avoids TS2308
 - [Pension Tracker conventions](pension-tracker-stack.md) — mutation hooks wrap body as { data: body }; OpenAI model gpt-5.4; 25MB body limit for base64 screenshots
+- [Metro pnpm symlinks](metro-pnpm-symlinks.md) — packages added to pension-tracker artifact are pnpm symlinks; Metro needs unstable_enableSymlinks + watchFolders to resolve them

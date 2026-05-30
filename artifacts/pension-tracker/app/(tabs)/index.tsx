@@ -15,14 +15,20 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { PensionChart } from "@/components/PensionChart";
+import type { ContributionPoint } from "@/components/PensionChart";
 import { useColors } from "@/hooks/useColors";
 import { useUserName } from "@/hooks/useUserName";
 import {
   useGetPensionInsights,
   useListPensionEntries,
+  useListContributions,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getGetPensionInsightsQueryKey, getListPensionEntriesQueryKey } from "@workspace/api-client-react";
+import {
+  getGetPensionInsightsQueryKey,
+  getListPensionEntriesQueryKey,
+  getListContributionsQueryKey,
+} from "@workspace/api-client-react";
 
 function formatCurrency(val: string | number): string {
   const n = typeof val === "string" ? parseFloat(val) : val;
@@ -52,12 +58,13 @@ export default function DashboardScreen() {
 
   const { data: entries, isLoading: entriesLoading, refetch: refetchEntries } = useListPensionEntries();
   const { data: insights, isLoading: insightsLoading, refetch: refetchInsights } = useGetPensionInsights();
+  const { data: contributionsRaw, refetch: refetchContributions } = useListContributions();
 
   const [refreshing, setRefreshing] = React.useState(false);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([refetchEntries(), refetchInsights()]);
+    await Promise.all([refetchEntries(), refetchInsights(), refetchContributions()]);
     setRefreshing(false);
   };
 
@@ -73,6 +80,30 @@ export default function DashboardScreen() {
     date: e.entry_date,
     value: parseFloat(e.pot_value),
   }));
+
+  const contributions: ContributionPoint[] | undefined = React.useMemo(() => {
+    if (!contributionsRaw || contributionsRaw.length === 0) return undefined;
+    return contributionsRaw.map((c) => ({
+      date: c.contribution_date,
+      employee: parseFloat(c.employee_amount),
+      employer: parseFloat(c.employer_amount),
+    }));
+  }, [contributionsRaw]);
+
+  // Compute latest cumulative totals for breakdown stat cards
+  const latestCumulative = React.useMemo(() => {
+    if (!contributions || chartData.length === 0) return null;
+    const latestDate = chartData[chartData.length - 1].date;
+    let emp = 0;
+    let emr = 0;
+    for (const c of contributions) {
+      if (c.date <= latestDate) {
+        emp += c.employee;
+        emr += c.employer;
+      }
+    }
+    return { employee: emp, employer: emr, total: emp + emr };
+  }, [contributions, chartData]);
 
   const topPad =
     Platform.OS === "web" ? 67 : insets.top;
@@ -91,6 +122,8 @@ export default function DashboardScreen() {
   }
 
   const hasData = sortedEntries.length > 0;
+  const latestPotValue = latestEntry ? parseFloat(latestEntry.pot_value) : 0;
+  const investmentReturn = latestCumulative ? latestPotValue - latestCumulative.total : null;
 
   return (
     <ScrollView
@@ -204,11 +237,75 @@ export default function DashboardScreen() {
               Performance
             </Text>
             <View style={styles.chartWrapper}>
-              <PensionChart data={chartData} height={200} />
+              <PensionChart data={chartData} contributions={contributions} height={200} />
             </View>
           </View>
 
-          {insights?.has_data && (
+          {/* Contribution breakdown cards */}
+          {latestCumulative && latestCumulative.total > 0 ? (
+            <View style={styles.statsRow}>
+              <View
+                style={[
+                  styles.statCard,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                    borderRadius: colors.radius,
+                  },
+                ]}
+              >
+                <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>
+                  From You
+                </Text>
+                <Text style={[styles.statValue, { color: colors.primary }]}>
+                  {formatCurrency(latestCumulative.employee)}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.statCard,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                    borderRadius: colors.radius,
+                  },
+                ]}
+              >
+                <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>
+                  Employer
+                </Text>
+                <Text style={[styles.statValue, { color: colors.accent }]}>
+                  {formatCurrency(latestCumulative.employer)}
+                </Text>
+              </View>
+              {investmentReturn !== null ? (
+                <View
+                  style={[
+                    styles.statCard,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: colors.border,
+                      borderRadius: colors.radius,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>
+                    Returns
+                  </Text>
+                  <Text
+                    style={[
+                      styles.statValue,
+                      { color: investmentReturn >= 0 ? colors.positive : colors.negative },
+                    ]}
+                  >
+                    {formatCurrency(investmentReturn)}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
+          {insights?.has_data && !latestCumulative && (
             <View style={styles.statsRow}>
               <View
                 style={[
@@ -405,19 +502,21 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    padding: 16,
+    padding: 14,
     borderWidth: 1,
     alignItems: "center",
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontFamily: "Inter_400Regular",
-    marginBottom: 6,
+    marginBottom: 5,
+    textAlign: "center",
   },
   statValue: {
-    fontSize: 22,
+    fontSize: 16,
     fontFamily: "Inter_700Bold",
-    letterSpacing: -0.5,
+    letterSpacing: -0.3,
+    textAlign: "center",
   },
   insightsCard: {
     padding: 16,

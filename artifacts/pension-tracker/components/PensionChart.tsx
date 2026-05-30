@@ -26,8 +26,15 @@ interface DataPoint {
   value: number;
 }
 
+export interface ContributionPoint {
+  date: string;
+  employee: number;
+  employer: number;
+}
+
 interface PensionChartProps {
   data: DataPoint[];
+  contributions?: ContributionPoint[];
   height?: number;
 }
 
@@ -65,7 +72,27 @@ function formatCurrency(v: number): string {
   })}`;
 }
 
-// Pure helpers — defined outside component so PanResponder closures are safe
+// Compute cumulative employee + employer contributions as of each pension entry date
+function computeCumulativeContribs(
+  entryDates: string[],
+  contributions: ContributionPoint[]
+): { employee: number; employer: number; total: number }[] {
+  const sorted = [...contributions].sort((a, b) => a.date.localeCompare(b.date));
+  return entryDates.map((entryDate) => {
+    let emp = 0;
+    let emr = 0;
+    for (const c of sorted) {
+      if (c.date <= entryDate) {
+        emp += c.employee;
+        emr += c.employer;
+      } else {
+        break;
+      }
+    }
+    return { employee: emp, employer: emr, total: emp + emr };
+  });
+}
+
 function findNearest(pts: ChartPoint[], touchX: number): string | null {
   if (pts.length === 0) return null;
   let nearest = pts[0];
@@ -89,7 +116,8 @@ function computeGeometry(
   data: DataPoint[],
   chartW: number,
   chartH: number,
-  pad: Padding
+  pad: Padding,
+  extraValues?: number[]
 ) {
   const innerW = chartW - pad.left - pad.right;
   const innerH = chartH - pad.top - pad.bottom;
@@ -101,13 +129,14 @@ function computeGeometry(
       yTicks: [] as { label: string; y: number }[],
       innerW,
       innerH,
+      yOf: (_v: number) => 0,
     };
   }
 
-  const values = data.map((d) => d.value);
-  const rawMin = Math.min(...values);
-  const rawMax = Math.max(...values);
-  const vPad = (rawMax - rawMin) * 0.15 || rawMax * 0.1 || 1000;
+  const allValues = [...data.map((d) => d.value), ...(extraValues ?? [])];
+  const rawMin = Math.min(...allValues);
+  const rawMax = Math.max(...allValues);
+  const vPad = (rawMax - rawMin) * 0.12 || rawMax * 0.1 || 1000;
   const minV = rawMin - vPad;
   const maxV = rawMax + vPad;
 
@@ -150,10 +179,10 @@ function computeGeometry(
     return { label: formatAxisValue(val), y: yOf(val) };
   });
 
-  return { points, xLabels, yTicks, innerW, innerH };
+  return { points, xLabels, yTicks, innerW, innerH, yOf };
 }
 
-function buildLinePath(pts: ChartPoint[]): string {
+function buildLinePath(pts: { x: number; y: number }[]): string {
   if (pts.length === 0) return "";
   if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`;
   let d = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
@@ -166,8 +195,29 @@ function buildLinePath(pts: ChartPoint[]): string {
   return d;
 }
 
+// Build a closed fill path between two smooth lines (top forward, bottom backward)
+function buildFillPath(
+  topPts: { x: number; y: number }[],
+  bottomPts: { x: number; y: number }[]
+): string {
+  if (topPts.length < 2 || bottomPts.length < 2) return "";
+  let d = buildLinePath(topPts);
+  // Line to last bottom point
+  d += ` L ${bottomPts[bottomPts.length - 1].x.toFixed(1)} ${bottomPts[bottomPts.length - 1].y.toFixed(1)}`;
+  // Backward through bottom
+  for (let i = bottomPts.length - 2; i >= 0; i--) {
+    const prev = bottomPts[i + 1];
+    const curr = bottomPts[i];
+    const cpX = (prev.x + curr.x) / 2;
+    d += ` C ${cpX.toFixed(1)} ${prev.y.toFixed(1)} ${cpX.toFixed(1)} ${curr.y.toFixed(1)} ${curr.x.toFixed(1)} ${curr.y.toFixed(1)}`;
+  }
+  d += " Z";
+  return d;
+}
+
 interface ChartSvgProps {
   data: DataPoint[];
+  contributions?: ContributionPoint[];
   chartW: number;
   chartH: number;
   pad: Padding;
@@ -178,6 +228,7 @@ interface ChartSvgProps {
 
 function ChartSvg({
   data,
+  contributions,
   chartW,
   chartH,
   pad,
@@ -185,11 +236,31 @@ function ChartSvg({
   colors,
   fontSize = 10,
 }: ChartSvgProps) {
-  const geo = useMemo(
-    () => computeGeometry(data, chartW, chartH, pad),
-    [data, chartW, chartH, pad]
+  const hasContribs = (contributions?.length ?? 0) > 0;
+
+  // Cumulative contribution amounts at each entry date
+  const cumulContribs = useMemo(
+    () =>
+      hasContribs && contributions
+        ? computeCumulativeContribs(
+            data.map((d) => d.date),
+            contributions
+          )
+        : null,
+    [data, contributions, hasContribs]
   );
-  const { points, xLabels, yTicks, innerW, innerH } = geo;
+
+  // Include contribution values in Y-scale so they're always visible
+  const extraValues = useMemo(() => {
+    if (!cumulContribs) return undefined;
+    return cumulContribs.flatMap((c) => [c.employee, c.total]);
+  }, [cumulContribs]);
+
+  const geo = useMemo(
+    () => computeGeometry(data, chartW, chartH, pad, extraValues),
+    [data, chartW, chartH, pad, extraValues]
+  );
+  const { points, xLabels, yTicks, innerW, innerH, yOf } = geo;
 
   if (points.length === 0) return null;
 
@@ -199,17 +270,49 @@ function ChartSvg({
 
   const linePath = buildLinePath(points);
   const bottomY = pad.top + innerH;
-  const fillPath =
+
+  // Pot value gradient fill (existing)
+  const potFillPath =
     points.length > 1
       ? `${linePath} L ${points[points.length - 1].x.toFixed(1)} ${bottomY} L ${points[0].x.toFixed(1)} ${bottomY} Z`
       : "";
 
+  // Contribution lines & fills
+  let employeePts: { x: number; y: number }[] = [];
+  let totalContribPts: { x: number; y: number }[] = [];
+  let investReturnFillPath = "";
+  let employerBandFillPath = "";
+  let employeeBandFillPath = "";
+
+  if (hasContribs && cumulContribs && points.length >= 2) {
+    employeePts = points.map((pt, i) => ({
+      x: pt.x,
+      y: yOf(cumulContribs[i].employee),
+    }));
+    totalContribPts = points.map((pt, i) => ({
+      x: pt.x,
+      y: yOf(cumulContribs[i].total),
+    }));
+
+    // Investment return fill: between totalContrib line and potValue line
+    investReturnFillPath = buildFillPath(points, totalContribPts);
+
+    // Employer band: between totalContrib and employee lines
+    const employerBottomPts = employeePts;
+    employerBandFillPath = buildFillPath(totalContribPts, employerBottomPts);
+
+    // Employee band: from employee line down to chart baseline
+    const baselinePts = points.map((pt) => ({ x: pt.x, y: bottomY }));
+    employeeBandFillPath = buildFillPath(employeePts, baselinePts);
+  }
+
   const activePt = activeDate
     ? (points.find((p) => p.date === activeDate) ?? null)
     : null;
+  const activeIdx = activePt ? points.indexOf(activePt) : -1;
 
-  const TT_W = 150;
-  const TT_H = 52;
+  const TT_W = 160;
+  const TT_H = hasContribs && activeIdx >= 0 && cumulContribs ? 82 : 52;
   const ttX = activePt
     ? activePt.x + TT_W + 10 > pad.left + innerW
       ? activePt.x - TT_W - 8
@@ -220,12 +323,17 @@ function ChartSvg({
   return (
     <Svg width={chartW} height={chartH}>
       <Defs>
-        <LinearGradient id="cg" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor={lineColor} stopOpacity="0.18" />
+        <LinearGradient id="potGrad" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0" stopColor={lineColor} stopOpacity="0.12" />
           <Stop offset="1" stopColor={lineColor} stopOpacity="0" />
+        </LinearGradient>
+        <LinearGradient id="retGrad" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0" stopColor={colors.positive} stopOpacity="0.22" />
+          <Stop offset="1" stopColor={colors.positive} stopOpacity="0.06" />
         </LinearGradient>
       </Defs>
 
+      {/* Grid lines */}
       {yTicks.map((tick, i) => (
         <React.Fragment key={i}>
           <Line
@@ -250,6 +358,7 @@ function ChartSvg({
         </React.Fragment>
       ))}
 
+      {/* X labels (hidden when crosshair active) */}
       {!activePt &&
         xLabels.map((lbl, i) => (
           <SvgText
@@ -265,8 +374,45 @@ function ChartSvg({
           </SvgText>
         ))}
 
-      {fillPath ? <Path d={fillPath} fill="url(#cg)" /> : null}
+      {/* === Contribution fills (rendered below pot value line) === */}
+      {hasContribs && employeeBandFillPath ? (
+        <Path d={employeeBandFillPath} fill={colors.primary} opacity="0.18" />
+      ) : null}
+      {hasContribs && employerBandFillPath ? (
+        <Path d={employerBandFillPath} fill={colors.accent} opacity="0.28" />
+      ) : null}
+      {hasContribs && investReturnFillPath ? (
+        <Path d={investReturnFillPath} fill="url(#retGrad)" />
+      ) : null}
 
+      {/* Pot value gradient fill (only when no contributions) */}
+      {!hasContribs && potFillPath ? (
+        <Path d={potFillPath} fill="url(#potGrad)" />
+      ) : null}
+
+      {/* Contribution lines */}
+      {hasContribs && employeePts.length > 1 ? (
+        <Path
+          d={buildLinePath(employeePts)}
+          stroke={colors.primary}
+          strokeWidth="1.5"
+          fill="none"
+          strokeDasharray="5,3"
+          opacity="0.7"
+        />
+      ) : null}
+      {hasContribs && totalContribPts.length > 1 ? (
+        <Path
+          d={buildLinePath(totalContribPts)}
+          stroke={colors.accent}
+          strokeWidth="1.5"
+          fill="none"
+          strokeDasharray="5,3"
+          opacity="0.85"
+        />
+      ) : null}
+
+      {/* Pot value line */}
       {points.length > 1 ? (
         <Path
           d={linePath}
@@ -278,6 +424,7 @@ function ChartSvg({
         />
       ) : null}
 
+      {/* Data point dots */}
       {points.map((pt, i) => {
         if (pt.date === activeDate) return null;
         return (
@@ -293,6 +440,7 @@ function ChartSvg({
         );
       })}
 
+      {/* Crosshair + tooltip */}
       {activePt && (
         <>
           <Line
@@ -313,6 +461,29 @@ function ChartSvg({
             stroke="#fff"
             strokeWidth="2.5"
           />
+
+          {/* Contribution crosshair dots */}
+          {hasContribs && cumulContribs && activeIdx >= 0 ? (
+            <>
+              <Circle
+                cx={activePt.x}
+                cy={yOf(cumulContribs[activeIdx].employee)}
+                r={4}
+                fill={colors.primary}
+                stroke="#fff"
+                strokeWidth="1.5"
+              />
+              <Circle
+                cx={activePt.x}
+                cy={yOf(cumulContribs[activeIdx].total)}
+                r={4}
+                fill={colors.accent}
+                stroke="#fff"
+                strokeWidth="1.5"
+              />
+            </>
+          ) : null}
+
           <Rect
             x={ttX}
             y={ttY}
@@ -323,9 +494,9 @@ function ChartSvg({
           />
           <SvgText
             x={ttX + TT_W / 2}
-            y={ttY + 18}
-            fontSize={fontSize + 1}
-            fill="rgba(255,255,255,0.75)"
+            y={ttY + 16}
+            fontSize={fontSize}
+            fill="rgba(255,255,255,0.7)"
             textAnchor="middle"
             fontFamily="Inter_400Regular"
           >
@@ -333,7 +504,7 @@ function ChartSvg({
           </SvgText>
           <SvgText
             x={ttX + TT_W / 2}
-            y={ttY + 38}
+            y={ttY + 34}
             fontSize={fontSize + 4}
             fill="#fff"
             textAnchor="middle"
@@ -341,29 +512,50 @@ function ChartSvg({
           >
             {formatCurrency(activePt.value)}
           </SvgText>
+
+          {hasContribs && cumulContribs && activeIdx >= 0 ? (
+            <>
+              <SvgText
+                x={ttX + TT_W / 2}
+                y={ttY + 52}
+                fontSize={fontSize - 1}
+                fill="rgba(255,255,255,0.65)"
+                textAnchor="middle"
+                fontFamily="Inter_400Regular"
+              >
+                {`Employee: ${formatCurrency(cumulContribs[activeIdx].employee)}`}
+              </SvgText>
+              <SvgText
+                x={ttX + TT_W / 2}
+                y={ttY + 68}
+                fontSize={fontSize - 1}
+                fill="rgba(255,255,255,0.65)"
+                textAnchor="middle"
+                fontFamily="Inter_400Regular"
+              >
+                {`Employer: ${formatCurrency(cumulContribs[activeIdx].employer)}`}
+              </SvgText>
+            </>
+          ) : null}
         </>
       )}
     </Svg>
   );
 }
 
-export function PensionChart({ data, height = 220 }: PensionChartProps) {
+export function PensionChart({ data, contributions, height = 220 }: PensionChartProps) {
   const colors = useColors();
   const { width: winW, height: winH } = useWindowDimensions();
   const autoLandscape = winW > winH && Platform.OS !== "web";
 
-  // Layout
   const [containerWidth, setContainerWidth] = useState(0);
   const [modalSize, setModalSize] = useState({ w: 0, h: 0 });
-
-  // Interaction state
   const [activeDate, setActiveDate] = useState<string | null>(null);
   const [zoomScale, setZoomScale] = useState(1);
   const [fullscreen, setFullscreen] = useState(false);
 
   const modalVisible = autoLandscape || fullscreen;
 
-  // ---- Stable refs (safe inside PanResponder closures) ----
   const portraitPtsRef = useRef<ChartPoint[]>([]);
   const modalPtsRef = useRef<ChartPoint[]>([]);
   const zoomRef = useRef(1);
@@ -371,42 +563,49 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
   const landStartX = useRef(0);
   const pinchStartDist = useRef<number | null>(null);
   const pinchStartZoom = useRef(1);
-  // 'crosshair' | 'pinch' | 'idle'
   const gestureMode = useRef<string>("idle");
   const lastTapTime = useRef(0);
 
-  // Keep zoom ref in sync every render
   zoomRef.current = zoomScale;
 
-  // ---- Derived: slice most-recent N points when zoomed ----
   const visibleData = useMemo(() => {
     if (zoomScale <= 1 || data.length <= 2) return data;
     const count = Math.max(2, Math.ceil(data.length / zoomScale));
     return data.slice(Math.max(0, data.length - count));
   }, [data, zoomScale]);
 
-  // ---- Geometry ----
+  // Geometry just for updating pts refs (used by PanResponder)
+  const hasContribsForScale = (contributions?.length ?? 0) > 0;
+  const cumulForScale = useMemo(
+    () =>
+      hasContribsForScale && contributions
+        ? computeCumulativeContribs(visibleData.map((d) => d.date), contributions)
+        : null,
+    [visibleData, contributions, hasContribsForScale]
+  );
+  const extraVals = useMemo(
+    () => cumulForScale?.flatMap((c) => [c.employee, c.total]),
+    [cumulForScale]
+  );
+
   const portraitGeo = useMemo(
     () =>
       containerWidth > 0
-        ? computeGeometry(visibleData, containerWidth, height, PORT_PAD)
-        : { points: [] as ChartPoint[], xLabels: [], yTicks: [], innerW: 0, innerH: 0 },
-    [visibleData, containerWidth, height]
+        ? computeGeometry(visibleData, containerWidth, height, PORT_PAD, extraVals)
+        : { points: [] as ChartPoint[], xLabels: [], yTicks: [], innerW: 0, innerH: 0, yOf: (_: number) => 0 },
+    [visibleData, containerWidth, height, extraVals]
   );
-
   const modalGeo = useMemo(
     () =>
       modalSize.w > 0
-        ? computeGeometry(visibleData, modalSize.w, modalSize.h, LAND_PAD)
-        : { points: [] as ChartPoint[], xLabels: [], yTicks: [], innerW: 0, innerH: 0 },
-    [visibleData, modalSize.w, modalSize.h]
+        ? computeGeometry(visibleData, modalSize.w, modalSize.h, LAND_PAD, extraVals)
+        : { points: [] as ChartPoint[], xLabels: [], yTicks: [], innerW: 0, innerH: 0, yOf: (_: number) => 0 },
+    [visibleData, modalSize.w, modalSize.h, extraVals]
   );
 
-  // Update refs each render so PanResponder closures always see latest geometry
   portraitPtsRef.current = portraitGeo.points;
   modalPtsRef.current = modalGeo.points;
 
-  // ---- Portrait PanResponder — crosshair + pinch-to-zoom ----
   const portraitPan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -420,7 +619,6 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
           gestureMode.current = "pinch";
           setActiveDate(null);
         } else {
-          // Double-tap resets zoom
           const now = Date.now();
           if (now - lastTapTime.current < 280) {
             setZoomScale(1);
@@ -439,7 +637,6 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
       onPanResponderMove: (evt, gs) => {
         const touches = evt.nativeEvent.touches;
 
-        // Second finger joined during move → switch to pinch
         if (touches.length >= 2 && gestureMode.current !== "pinch") {
           pinchStartDist.current = pinchDistance(touches);
           pinchStartZoom.current = zoomRef.current;
@@ -461,9 +658,7 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
         }
 
         if (gestureMode.current === "crosshair") {
-          setActiveDate(
-            findNearest(portraitPtsRef.current, portStartX.current + gs.dx)
-          );
+          setActiveDate(findNearest(portraitPtsRef.current, portStartX.current + gs.dx));
         }
       },
 
@@ -472,7 +667,6 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
         gestureMode.current = "idle";
         setActiveDate(null);
       },
-
       onPanResponderTerminate: () => {
         pinchStartDist.current = null;
         gestureMode.current = "idle";
@@ -481,7 +675,6 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
     })
   ).current;
 
-  // ---- Modal PanResponder — crosshair only ----
   const modalPan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -508,11 +701,11 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
     );
   }
 
+  const hasContribs = (contributions?.length ?? 0) > 0;
   const showZoomLabel = zoomScale > 1.08;
 
   return (
     <>
-      {/* Portrait chart */}
       <View style={styles.chartWrapper}>
         <View
           style={styles.container}
@@ -522,6 +715,7 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
           {containerWidth > 0 && (
             <ChartSvg
               data={visibleData}
+              contributions={contributions}
               chartW={containerWidth}
               chartH={height}
               pad={PORT_PAD}
@@ -532,13 +726,12 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
           )}
         </View>
 
-        {/* Zoom badge + fullscreen button — siblings of the pan view, no touch conflict */}
         <View style={styles.overlayRow}>
-          {showZoomLabel && (
+          {showZoomLabel ? (
             <Text style={[styles.zoomBadge, { color: colors.mutedForeground }]}>
               {zoomScale.toFixed(1)}× · double-tap to reset
             </Text>
-          )}
+          ) : null}
           <Pressable
             style={[styles.expandBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
             hitSlop={12}
@@ -547,9 +740,26 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
             <Text style={[styles.expandIcon, { color: colors.mutedForeground }]}>⛶</Text>
           </Pressable>
         </View>
+
+        {/* Contribution legend */}
+        {hasContribs && (
+          <View style={styles.legend}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendSwatch, { backgroundColor: colors.positive, opacity: 0.75 }]} />
+              <Text style={[styles.legendLabel, { color: colors.mutedForeground }]}>Investment return</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendSwatch, { backgroundColor: colors.accent, opacity: 0.75 }]} />
+              <Text style={[styles.legendLabel, { color: colors.mutedForeground }]}>Employer</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendSwatch, { backgroundColor: colors.primary, opacity: 0.6 }]} />
+              <Text style={[styles.legendLabel, { color: colors.mutedForeground }]}>From you</Text>
+            </View>
+          </View>
+        )}
       </View>
 
-      {/* Fullscreen modal — triggered by rotation OR expand button */}
       <Modal
         visible={modalVisible}
         animationType="fade"
@@ -571,6 +781,7 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
           {modalSize.w > 0 && (
             <ChartSvg
               data={visibleData}
+              contributions={contributions}
               chartW={modalSize.w}
               chartH={modalSize.h}
               pad={LAND_PAD}
@@ -580,7 +791,6 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
             />
           )}
 
-          {/* Close button (only when manually opened, not auto-landscape) */}
           {!autoLandscape && (
             <Pressable
               style={[styles.closeBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -635,6 +845,28 @@ const styles = StyleSheet.create({
   expandIcon: {
     fontSize: 14,
     lineHeight: 16,
+  },
+  legend: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    paddingHorizontal: 4,
+    paddingTop: 6,
+    paddingBottom: 2,
+  },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  legendSwatch: {
+    width: 10,
+    height: 10,
+    borderRadius: 2,
+  },
+  legendLabel: {
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
   },
   empty: {
     alignItems: "center",
