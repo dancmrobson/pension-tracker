@@ -5,13 +5,24 @@ import { openai } from "@workspace/integrations-openai-ai-server";
 
 const pensionRouter = Router();
 
+function serializeEntry(e: typeof pensionEntriesTable.$inferSelect) {
+  return {
+    id: e.id,
+    entry_date: e.entryDate,
+    pot_value: e.potValue,
+    total_contributions: e.totalContributions ?? null,
+    notes: e.notes ?? null,
+    created_at: e.createdAt instanceof Date ? e.createdAt.toISOString() : String(e.createdAt),
+  };
+}
+
 pensionRouter.get("/pension/entries", async (req, res) => {
   try {
     const entries = await db
       .select()
       .from(pensionEntriesTable)
       .orderBy(asc(pensionEntriesTable.entryDate));
-    res.json(entries);
+    res.json(entries.map(serializeEntry));
   } catch (err) {
     req.log.error({ err }, "Failed to list pension entries");
     res.status(500).json({ error: "Failed to list entries" });
@@ -101,7 +112,7 @@ pensionRouter.post("/pension/entries", async (req, res) => {
       })
       .returning();
 
-    res.status(201).json(entry);
+    res.status(201).json(serializeEntry(entry));
   } catch (err) {
     req.log.error({ err }, "Failed to create pension entry");
     res.status(500).json({ error: "Failed to create entry" });
