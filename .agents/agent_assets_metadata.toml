@@ -18,3 +18,15 @@ id = "4Q9CjBw7TpNrgdA2oSmo1"
 uri = "file://attached_assets/icon_jar2.png"
 type = "image"
 title = "pension jar icon v2"
+
+[[generated]]
+id = "C9zipI5gXP-74BLaSebKW"
+uri = "file://attached_assets/icon_flat.png"
+type = "image"
+title = "flat 2D jar icon"
+
+[[generated]]
+id = "8-ReJ1ON3ebofa8epRmlt"
+uri = "file://attached_assets/icon_flat2.png"
+type = "image"
+title = "flat 2D jar icon v2"
