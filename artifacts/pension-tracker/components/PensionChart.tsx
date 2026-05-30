@@ -3,6 +3,7 @@ import {
   Modal,
   PanResponder,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -34,7 +35,8 @@ type ChartPoint = { x: number; y: number; date: string; value: number };
 type Padding = { left: number; right: number; top: number; bottom: number };
 
 const PORT_PAD: Padding = { left: 52, right: 16, top: 18, bottom: 44 };
-const LAND_PAD: Padding = { left: 64, right: 32, top: 28, bottom: 56 };
+const LAND_PAD: Padding = { left: 64, right: 32, top: 36, bottom: 56 };
+const MAX_ZOOM = 10;
 
 function formatShortDate(dateStr: string): string {
   const d = new Date(dateStr + "T00:00:00");
@@ -61,6 +63,26 @@ function formatCurrency(v: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+// Pure helpers — defined outside component so PanResponder closures are safe
+function findNearest(pts: ChartPoint[], touchX: number): string | null {
+  if (pts.length === 0) return null;
+  let nearest = pts[0];
+  let minDist = Infinity;
+  for (const pt of pts) {
+    const dist = Math.abs(touchX - pt.x);
+    if (dist < minDist) {
+      minDist = dist;
+      nearest = pt;
+    }
+  }
+  return nearest.date;
+}
+
+function pinchDistance(touches: { pageX: number; pageY: number }[]): number {
+  const [a, b] = touches;
+  return Math.hypot(b.pageX - a.pageX, b.pageY - a.pageY);
 }
 
 function computeGeometry(
@@ -91,7 +113,7 @@ function computeGeometry(
 
   const times = data.map((d) => new Date(d.date + "T00:00:00").getTime());
   const minT = Math.min(...times);
-  const tRange = (Math.max(...times) - minT) || 1;
+  const tRange = Math.max(...times) - minT || 1;
 
   const xOf = (dateStr: string) => {
     const t = new Date(dateStr + "T00:00:00").getTime();
@@ -99,8 +121,7 @@ function computeGeometry(
       ? pad.left + innerW / 2
       : pad.left + ((t - minT) / tRange) * innerW;
   };
-  const yOf = (v: number) =>
-    pad.top + ((maxV - v) / (maxV - minV)) * innerH;
+  const yOf = (v: number) => pad.top + ((maxV - v) / (maxV - minV)) * innerH;
 
   const points: ChartPoint[] = data.map((d) => ({
     x: xOf(d.date),
@@ -187,8 +208,8 @@ function ChartSvg({
     ? (points.find((p) => p.date === activeDate) ?? null)
     : null;
 
-  const TT_W = 140;
-  const TT_H = 50;
+  const TT_W = 150;
+  const TT_H = 52;
   const ttX = activePt
     ? activePt.x + TT_W + 10 > pad.left + innerW
       ? activePt.x - TT_W - 8
@@ -312,7 +333,7 @@ function ChartSvg({
           </SvgText>
           <SvgText
             x={ttX + TT_W / 2}
-            y={ttY + 37}
+            y={ttY + 38}
             fontSize={fontSize + 4}
             fill="#fff"
             textAnchor="middle"
@@ -329,87 +350,148 @@ function ChartSvg({
 export function PensionChart({ data, height = 220 }: PensionChartProps) {
   const colors = useColors();
   const { width: winW, height: winH } = useWindowDimensions();
-  const isLandscape = winW > winH && Platform.OS !== "web";
+  const autoLandscape = winW > winH && Platform.OS !== "web";
 
-  // Measured width of the portrait container — avoids hardcoding offsets
+  // Layout
   const [containerWidth, setContainerWidth] = useState(0);
+  const [modalSize, setModalSize] = useState({ w: 0, h: 0 });
 
+  // Interaction state
   const [activeDate, setActiveDate] = useState<string | null>(null);
+  const [zoomScale, setZoomScale] = useState(1);
+  const [fullscreen, setFullscreen] = useState(false);
 
-  // Refs so PanResponder closures always see the latest geometry
+  const modalVisible = autoLandscape || fullscreen;
+
+  // ---- Stable refs (safe inside PanResponder closures) ----
   const portraitPtsRef = useRef<ChartPoint[]>([]);
-  const landscapePtsRef = useRef<ChartPoint[]>([]);
-
-  // Capture the touch-start X; subsequent moves use startX + gestureState.dx
-  // so vertical finger movement can't corrupt the horizontal reading
+  const modalPtsRef = useRef<ChartPoint[]>([]);
+  const zoomRef = useRef(1);
   const portStartX = useRef(0);
   const landStartX = useRef(0);
+  const pinchStartDist = useRef<number | null>(null);
+  const pinchStartZoom = useRef(1);
+  // 'crosshair' | 'pinch' | 'idle'
+  const gestureMode = useRef<string>("idle");
+  const lastTapTime = useRef(0);
 
+  // Keep zoom ref in sync every render
+  zoomRef.current = zoomScale;
+
+  // ---- Derived: slice most-recent N points when zoomed ----
+  const visibleData = useMemo(() => {
+    if (zoomScale <= 1 || data.length <= 2) return data;
+    const count = Math.max(2, Math.ceil(data.length / zoomScale));
+    return data.slice(Math.max(0, data.length - count));
+  }, [data, zoomScale]);
+
+  // ---- Geometry ----
   const portraitGeo = useMemo(
     () =>
       containerWidth > 0
-        ? computeGeometry(data, containerWidth, height, PORT_PAD)
+        ? computeGeometry(visibleData, containerWidth, height, PORT_PAD)
         : { points: [] as ChartPoint[], xLabels: [], yTicks: [], innerW: 0, innerH: 0 },
-    [data, containerWidth, height]
-  );
-  const landscapeGeo = useMemo(
-    () => computeGeometry(data, winW, winH, LAND_PAD),
-    [data, winW, winH]
+    [visibleData, containerWidth, height]
   );
 
+  const modalGeo = useMemo(
+    () =>
+      modalSize.w > 0
+        ? computeGeometry(visibleData, modalSize.w, modalSize.h, LAND_PAD)
+        : { points: [] as ChartPoint[], xLabels: [], yTicks: [], innerW: 0, innerH: 0 },
+    [visibleData, modalSize.w, modalSize.h]
+  );
+
+  // Update refs each render so PanResponder closures always see latest geometry
   portraitPtsRef.current = portraitGeo.points;
-  landscapePtsRef.current = landscapeGeo.points;
+  modalPtsRef.current = modalGeo.points;
 
-  const findNearest = (pts: ChartPoint[], touchX: number): string | null => {
-    if (pts.length === 0) return null;
-    let nearest = pts[0];
-    let minDist = Infinity;
-    for (const pt of pts) {
-      const dist = Math.abs(touchX - pt.x);
-      if (dist < minDist) {
-        minDist = dist;
-        nearest = pt;
-      }
-    }
-    return nearest.date;
-  };
-
+  // ---- Portrait PanResponder — crosshair + pinch-to-zoom ----
   const portraitPan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
+
       onPanResponderGrant: (evt) => {
-        portStartX.current = evt.nativeEvent.locationX;
-        setActiveDate(findNearest(portraitPtsRef.current, portStartX.current));
+        const touches = evt.nativeEvent.touches;
+        if (touches.length >= 2) {
+          pinchStartDist.current = pinchDistance(touches);
+          pinchStartZoom.current = zoomRef.current;
+          gestureMode.current = "pinch";
+          setActiveDate(null);
+        } else {
+          // Double-tap resets zoom
+          const now = Date.now();
+          if (now - lastTapTime.current < 280) {
+            setZoomScale(1);
+            zoomRef.current = 1;
+            gestureMode.current = "idle";
+            lastTapTime.current = 0;
+            return;
+          }
+          lastTapTime.current = now;
+          portStartX.current = evt.nativeEvent.locationX;
+          gestureMode.current = "crosshair";
+          setActiveDate(findNearest(portraitPtsRef.current, portStartX.current));
+        }
       },
-      onPanResponderMove: (_, gestureState) => {
-        setActiveDate(
-          findNearest(
-            portraitPtsRef.current,
-            portStartX.current + gestureState.dx
-          )
-        );
+
+      onPanResponderMove: (evt, gs) => {
+        const touches = evt.nativeEvent.touches;
+
+        // Second finger joined during move → switch to pinch
+        if (touches.length >= 2 && gestureMode.current !== "pinch") {
+          pinchStartDist.current = pinchDistance(touches);
+          pinchStartZoom.current = zoomRef.current;
+          gestureMode.current = "pinch";
+          setActiveDate(null);
+        }
+
+        if (gestureMode.current === "pinch" && touches.length >= 2) {
+          const dist = pinchDistance(touches);
+          if (pinchStartDist.current && pinchStartDist.current > 0) {
+            const newZoom = Math.max(
+              1,
+              Math.min(pinchStartZoom.current * (dist / pinchStartDist.current), MAX_ZOOM)
+            );
+            setZoomScale(newZoom);
+            zoomRef.current = newZoom;
+          }
+          return;
+        }
+
+        if (gestureMode.current === "crosshair") {
+          setActiveDate(
+            findNearest(portraitPtsRef.current, portStartX.current + gs.dx)
+          );
+        }
       },
-      onPanResponderRelease: () => setActiveDate(null),
-      onPanResponderTerminate: () => setActiveDate(null),
+
+      onPanResponderRelease: () => {
+        pinchStartDist.current = null;
+        gestureMode.current = "idle";
+        setActiveDate(null);
+      },
+
+      onPanResponderTerminate: () => {
+        pinchStartDist.current = null;
+        gestureMode.current = "idle";
+        setActiveDate(null);
+      },
     })
   ).current;
 
-  const landscapePan = useRef(
+  // ---- Modal PanResponder — crosshair only ----
+  const modalPan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt) => {
         landStartX.current = evt.nativeEvent.locationX;
-        setActiveDate(findNearest(landscapePtsRef.current, landStartX.current));
+        setActiveDate(findNearest(modalPtsRef.current, landStartX.current));
       },
-      onPanResponderMove: (_, gestureState) => {
-        setActiveDate(
-          findNearest(
-            landscapePtsRef.current,
-            landStartX.current + gestureState.dx
-          )
-        );
+      onPanResponderMove: (_, gs) => {
+        setActiveDate(findNearest(modalPtsRef.current, landStartX.current + gs.dx));
       },
       onPanResponderRelease: () => setActiveDate(null),
       onPanResponderTerminate: () => setActiveDate(null),
@@ -426,51 +508,94 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
     );
   }
 
+  const showZoomLabel = zoomScale > 1.08;
+
   return (
     <>
-      {/* Portrait chart — width measured from actual container, not screen */}
-      <View
-        style={styles.container}
-        onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
-        {...portraitPan.panHandlers}
-      >
-        {containerWidth > 0 && (
-          <ChartSvg
-            data={data}
-            chartW={containerWidth}
-            chartH={height}
-            pad={PORT_PAD}
-            activeDate={activeDate}
-            colors={colors}
-            fontSize={10}
-          />
-        )}
+      {/* Portrait chart */}
+      <View style={styles.chartWrapper}>
+        <View
+          style={styles.container}
+          onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+          {...portraitPan.panHandlers}
+        >
+          {containerWidth > 0 && (
+            <ChartSvg
+              data={visibleData}
+              chartW={containerWidth}
+              chartH={height}
+              pad={PORT_PAD}
+              activeDate={activeDate}
+              colors={colors}
+              fontSize={10}
+            />
+          )}
+        </View>
+
+        {/* Zoom badge + fullscreen button — siblings of the pan view, no touch conflict */}
+        <View style={styles.overlayRow}>
+          {showZoomLabel && (
+            <Text style={[styles.zoomBadge, { color: colors.mutedForeground }]}>
+              {zoomScale.toFixed(1)}× · double-tap to reset
+            </Text>
+          )}
+          <Pressable
+            style={[styles.expandBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+            hitSlop={12}
+            onPress={() => { setFullscreen(true); setActiveDate(null); }}
+          >
+            <Text style={[styles.expandIcon, { color: colors.mutedForeground }]}>⛶</Text>
+          </Pressable>
+        </View>
       </View>
 
-      {/* Fullscreen landscape modal — auto-shows on rotation */}
+      {/* Fullscreen modal — triggered by rotation OR expand button */}
       <Modal
-        visible={isLandscape}
-        animationType="none"
+        visible={modalVisible}
+        animationType="fade"
         transparent={false}
         statusBarTranslucent
         hardwareAccelerated
+        onRequestClose={() => setFullscreen(false)}
       >
         <View
           style={[styles.fullscreen, { backgroundColor: colors.background }]}
-          {...landscapePan.panHandlers}
+          onLayout={(e) =>
+            setModalSize({
+              w: e.nativeEvent.layout.width,
+              h: e.nativeEvent.layout.height,
+            })
+          }
+          {...modalPan.panHandlers}
         >
-          <ChartSvg
-            data={data}
-            chartW={winW}
-            chartH={winH}
-            pad={LAND_PAD}
-            activeDate={activeDate}
-            colors={colors}
-            fontSize={12}
-          />
+          {modalSize.w > 0 && (
+            <ChartSvg
+              data={visibleData}
+              chartW={modalSize.w}
+              chartH={modalSize.h}
+              pad={LAND_PAD}
+              activeDate={activeDate}
+              colors={colors}
+              fontSize={12}
+            />
+          )}
+
+          {/* Close button (only when manually opened, not auto-landscape) */}
+          {!autoLandscape && (
+            <Pressable
+              style={[styles.closeBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+              hitSlop={12}
+              onPress={() => { setFullscreen(false); setActiveDate(null); }}
+            >
+              <Text style={[styles.closeIcon, { color: colors.foreground }]}>✕</Text>
+            </Pressable>
+          )}
+
           {!activeDate && (
             <Text style={[styles.hint, { color: colors.mutedForeground }]}>
-              Touch &amp; drag to scan · Rotate to return
+              {autoLandscape
+                ? "Touch & drag to scan · Rotate to return"
+                : "Touch & drag to scan"}
             </Text>
           )}
         </View>
@@ -480,8 +605,36 @@ export function PensionChart({ data, height = 220 }: PensionChartProps) {
 }
 
 const styles = StyleSheet.create({
+  chartWrapper: {
+    alignSelf: "stretch",
+  },
   container: {
     alignSelf: "stretch",
+  },
+  overlayRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    marginTop: 4,
+    paddingHorizontal: 4,
+    minHeight: 28,
+  },
+  zoomBadge: {
+    flex: 1,
+    fontSize: 11,
+    opacity: 0.7,
+  },
+  expandBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  expandIcon: {
+    fontSize: 14,
+    lineHeight: 16,
   },
   empty: {
     alignItems: "center",
@@ -492,13 +645,27 @@ const styles = StyleSheet.create({
   },
   fullscreen: {
     flex: 1,
-    justifyContent: "center",
+  },
+  closeBtn: {
+    position: "absolute",
+    top: 48,
+    right: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
     alignItems: "center",
+    justifyContent: "center",
+  },
+  closeIcon: {
+    fontSize: 14,
+    fontWeight: "600",
   },
   hint: {
     position: "absolute",
-    bottom: 14,
+    bottom: 16,
+    alignSelf: "center",
     fontSize: 12,
-    opacity: 0.55,
+    opacity: 0.5,
   },
 });
