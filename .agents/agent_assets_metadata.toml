@@ -30,3 +30,15 @@ id = "8-ReJ1ON3ebofa8epRmlt"
 uri = "file://attached_assets/icon_flat2.png"
 type = "image"
 title = "flat 2D jar icon v2"
+
+[[generated]]
+id = "GLVph2OXQ6uBlIEq9BsIn"
+uri = "file://attached_assets/icon_final.png"
+type = "image"
+title = "floating oval lid jar icon"
+
+[[generated]]
+id = "F6_R5e4_YZmlgGBuPrfmL"
+uri = "file://attached_assets/icon_final2.png"
+type = "image"
+title = "floating lid jar icon solid fill"
