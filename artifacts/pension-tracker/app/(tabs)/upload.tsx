@@ -231,7 +231,7 @@ export default function UploadScreen() {
       if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
         // Read as base64, parse with SheetJS, convert first sheet → CSV string
         const b64 = await FileSystem.readAsStringAsync(asset.uri, {
-          encoding: FileSystem.EncodingType.Base64,
+          encoding: "base64",
         });
         const workbook = XLSX.read(b64, { type: "base64" });
         const sheetName = workbook.SheetNames[0];

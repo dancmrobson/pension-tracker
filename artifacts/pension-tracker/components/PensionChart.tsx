@@ -12,7 +12,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import DateTimePicker from "@react-native-community/datetimepicker";
+
 import Svg, {
   Circle,
   Defs,
@@ -23,6 +23,7 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from "react-native-svg";
+import { Ionicons } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -406,6 +407,82 @@ function ChartSvg({ data, contributions, chartW, chartH, pad, activeDate, colors
   );
 }
 
+// ─── DatePickerModal (pure JS, no native modules — works in Expo Go) ─────────
+
+function DatePickerModal({
+  label,
+  initialValue,
+  colors,
+  onConfirm,
+  onCancel,
+}: {
+  label: string;
+  initialValue: string;
+  colors: ReturnType<typeof useColors>;
+  onConfirm: (iso: string) => void;
+  onCancel: () => void;
+}) {
+  const [raw, setRaw] = useState(initialValue.replace(/\D/g, ""));
+
+  function formatDisplay(digits: string) {
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4, 8)}`;
+  }
+
+  function handleChange(text: string) {
+    const digits = text.replace(/\D/g, "").slice(0, 8);
+    setRaw(digits);
+  }
+
+  function handleConfirm() {
+    if (raw.length !== 8) return;
+    const dd = raw.slice(0, 2);
+    const mm = raw.slice(2, 4);
+    const yyyy = raw.slice(4, 8);
+    const iso = `${yyyy}-${mm}-${dd}`;
+    const d = new Date(iso + "T00:00:00");
+    if (isNaN(d.getTime())) return;
+    onConfirm(iso);
+  }
+
+  return (
+    <Modal transparent animationType="fade" onRequestClose={onCancel}>
+      <Pressable style={styles.modalOverlay} onPress={onCancel}>
+        <Pressable style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.modalLabel, { color: colors.mutedForeground }]}>{label}</Text>
+          <TextInput
+            style={[styles.modalInput, { color: colors.foreground, backgroundColor: colors.secondary, borderColor: colors.border }]}
+            placeholder="dd/mm/yyyy"
+            placeholderTextColor={colors.mutedForeground}
+            value={formatDisplay(raw)}
+            onChangeText={handleChange}
+            keyboardType="number-pad"
+            autoFocus
+            maxLength={10}
+          />
+          <Text style={[styles.modalHint, { color: colors.mutedForeground }]}>Enter date as digits: ddmmyyyy</Text>
+          <View style={styles.modalButtons}>
+            <TouchableOpacity
+              style={[styles.modalBtn, styles.modalBtnCancel, { borderColor: colors.border }]}
+              onPress={onCancel}
+            >
+              <Text style={[styles.modalBtnText, { color: colors.mutedForeground }]}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modalBtn, styles.modalBtnConfirm, { backgroundColor: raw.length === 8 ? colors.primary : colors.secondary }]}
+              onPress={handleConfirm}
+              disabled={raw.length !== 8}
+            >
+              <Text style={[styles.modalBtnText, { color: raw.length === 8 ? "#fff" : colors.mutedForeground }]}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 // ─── PensionChart (main component) ───────────────────────────────────────────
 
 export function PensionChart({ data, contributions, height = 220 }: PensionChartProps) {
@@ -754,80 +831,28 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
         </View>
       )}
 
-      {/* ── Native date pickers ── */}
-      {rangePreset === "Custom" && showFromPicker && Platform.OS !== "web" && (
-        <DateTimePicker
-          value={customFrom ? new Date(customFrom + "T00:00:00") : new Date()}
-          mode="date"
-          display={Platform.OS === "ios" ? "inline" : "default"}
-          maximumDate={customTo ? new Date(customTo + "T00:00:00") : new Date()}
-          onChange={(_, date) => {
-            setShowFromPicker(Platform.OS === "ios");
-            if (date) {
-              setCustomFrom(fromDateObj(date));
-              setScrollOffset(0);
-              scrollOffsetRef.current = 0;
+      {/* ── Date picker modal (pure JS, works in Expo Go) ── */}
+      {(showFromPicker || showToPicker) && (
+        <DatePickerModal
+          label={showFromPicker ? "From date" : "To date"}
+          initialValue={showFromPicker ? toDisplay(customFrom) : toDisplay(customTo)}
+          colors={colors}
+          onConfirm={(iso) => {
+            if (showFromPicker) {
+              setCustomFrom(iso);
+            } else {
+              setCustomTo(iso);
             }
+            setScrollOffset(0);
+            scrollOffsetRef.current = 0;
+            setShowFromPicker(false);
+            setShowToPicker(false);
+          }}
+          onCancel={() => {
+            setShowFromPicker(false);
+            setShowToPicker(false);
           }}
         />
-      )}
-      {rangePreset === "Custom" && showToPicker && Platform.OS !== "web" && (
-        <DateTimePicker
-          value={customTo ? new Date(customTo + "T00:00:00") : new Date()}
-          mode="date"
-          display={Platform.OS === "ios" ? "inline" : "default"}
-          minimumDate={customFrom ? new Date(customFrom + "T00:00:00") : undefined}
-          maximumDate={new Date()}
-          onChange={(_, date) => {
-            setShowToPicker(Platform.OS === "ios");
-            if (date) {
-              setCustomTo(fromDateObj(date));
-              setScrollOffset(0);
-              scrollOffsetRef.current = 0;
-            }
-          }}
-        />
-      )}
-
-      {/* Web fallback: plain text inputs */}
-      {rangePreset === "Custom" && Platform.OS === "web" && (showFromPicker || showToPicker) && (
-        <View style={styles.customDateRow}>
-          <TextInput
-            style={[styles.dateInputWeb, { color: colors.foreground, backgroundColor: colors.secondary, borderColor: colors.border }]}
-            placeholder="dd/mm/yyyy"
-            placeholderTextColor={colors.mutedForeground}
-            value={toDisplay(customFrom)}
-            onChangeText={(t) => {
-              const clean = t.replace(/\D/g, "");
-              if (clean.length === 8) {
-                const iso = `${clean.slice(4)}-${clean.slice(2, 4)}-${clean.slice(0, 2)}`;
-                setCustomFrom(iso);
-                setScrollOffset(0);
-                scrollOffsetRef.current = 0;
-              }
-            }}
-            keyboardType="numbers-and-punctuation"
-            maxLength={10}
-          />
-          <Text style={[styles.dateSep, { color: colors.mutedForeground }]}>→</Text>
-          <TextInput
-            style={[styles.dateInputWeb, { color: colors.foreground, backgroundColor: colors.secondary, borderColor: colors.border }]}
-            placeholder="dd/mm/yyyy"
-            placeholderTextColor={colors.mutedForeground}
-            value={toDisplay(customTo)}
-            onChangeText={(t) => {
-              const clean = t.replace(/\D/g, "");
-              if (clean.length === 8) {
-                const iso = `${clean.slice(4)}-${clean.slice(2, 4)}-${clean.slice(0, 2)}`;
-                setCustomTo(iso);
-                setScrollOffset(0);
-                scrollOffsetRef.current = 0;
-              }
-            }}
-            keyboardType="numbers-and-punctuation"
-            maxLength={10}
-          />
-        </View>
       )}
 
       {/* ── No data in range ── */}
@@ -1121,5 +1146,60 @@ const styles = StyleSheet.create({
     fontSize: 12,
     opacity: 0.5,
     fontFamily: "Inter_400Regular",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 32,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 320,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 24,
+    gap: 12,
+  },
+  modalLabel: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  modalInput: {
+    height: 48,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    fontSize: 20,
+    fontFamily: "Inter_400Regular",
+    letterSpacing: 2,
+  },
+  modalHint: {
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    opacity: 0.7,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 4,
+  },
+  modalBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalBtnCancel: {
+    borderWidth: 1,
+  },
+  modalBtnConfirm: {},
+  modalBtnText: {
+    fontSize: 15,
+    fontFamily: "Inter_500Medium",
   },
 });
