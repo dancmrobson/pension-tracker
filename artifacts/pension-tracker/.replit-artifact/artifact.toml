@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "Pension Tracker"
+version = "1.0.0"
+id = "artifacts/pension-tracker"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 25304
+
+[services.development]
+run = "pnpm --filter @workspace/pension-tracker run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/pension-tracker", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/pension-tracker", "run", "serve" ]
+
+[services.env]
+PORT = "25304"
+BASE_PATH = "/"

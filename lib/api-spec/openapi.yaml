@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: pension
+    description: Pension tracking operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,90 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /pension/entries:
+    get:
+      operationId: listPensionEntries
+      tags: [pension]
+      summary: List all pension entries
+      responses:
+        "200":
+          description: List of pension entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PensionEntry"
+    post:
+      operationId: createPensionEntry
+      tags: [pension]
+      summary: Create a pension entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePensionEntryBody"
+      responses:
+        "201":
+          description: Created entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PensionEntry"
+
+  /pension/entries/analyze:
+    post:
+      operationId: analyzePensionImage
+      tags: [pension]
+      summary: Analyze a pension screenshot and extract values
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalyzeImageBody"
+      responses:
+        "200":
+          description: Extracted pension data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyzedPensionData"
+
+  /pension/entries/{id}:
+    delete:
+      operationId: deletePensionEntry
+      tags: [pension]
+      summary: Delete a pension entry
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeletePensionEntryResponse"
+
+  /pension/insights:
+    get:
+      operationId: getPensionInsights
+      tags: [pension]
+      summary: Get AI-powered insights about pension performance
+      responses:
+        "200":
+          description: Pension insights
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PensionInsights"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +120,111 @@ components:
       required:
         - status
 
+    PensionEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        entry_date:
+          type: string
+          description: Date in YYYY-MM-DD format
+        pot_value:
+          type: string
+          description: Pension pot value as a decimal string
+        total_contributions:
+          type: string
+          nullable: true
+          description: Total contributions as a decimal string
+        notes:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+      required:
+        - id
+        - entry_date
+        - pot_value
+        - created_at
+
+    CreatePensionEntryBody:
+      type: object
+      properties:
+        entry_date:
+          type: string
+          description: Date in YYYY-MM-DD format
+        pot_value:
+          type: string
+          description: Pension pot value
+        total_contributions:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+      required:
+        - entry_date
+        - pot_value
+
+    AnalyzeImageBody:
+      type: object
+      properties:
+        image_base64:
+          type: string
+          description: Base64-encoded image (JPEG or PNG)
+      required:
+        - image_base64
+
+    AnalyzedPensionData:
+      type: object
+      properties:
+        entry_date:
+          type: string
+          nullable: true
+          description: Extracted date in YYYY-MM-DD format
+        pot_value:
+          type: number
+          nullable: true
+          description: Extracted pension pot value
+        total_contributions:
+          type: number
+          nullable: true
+          description: Extracted total contributions
+        confidence:
+          type: string
+          description: Confidence level - high, medium, or low
+        message:
+          type: string
+          description: Description of what was extracted
+      required:
+        - confidence
+        - message
+
+    PensionInsights:
+      type: object
+      properties:
+        has_data:
+          type: boolean
+        summary:
+          type: string
+        total_growth_pct:
+          type: number
+          nullable: true
+        annualized_return_pct:
+          type: number
+          nullable: true
+        insights:
+          type: array
+          items:
+            type: string
+      required:
+        - has_data
+        - summary
+        - insights
+
+    DeletePensionEntryResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required:
+        - success
