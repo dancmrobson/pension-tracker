@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useColors } from "@/hooks/useColors";
+import { useUserName } from "@/hooks/useUserName";
 import {
   useAnalyzePensionImage,
   useCreatePensionEntry,
@@ -35,6 +36,7 @@ export default function UploadScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { name, saveName } = useUserName();
 
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
@@ -115,6 +117,7 @@ export default function UploadScreen() {
           if (data.pot_value != null) setEditValue(String(data.pot_value));
           if (data.total_contributions != null)
             setEditContributions(String(data.total_contributions));
+          if (data.user_name && !name) saveName(data.user_name);
         },
         onError: () => {
           Alert.alert("Error", "Failed to analyze image. Please try again or enter values manually.");

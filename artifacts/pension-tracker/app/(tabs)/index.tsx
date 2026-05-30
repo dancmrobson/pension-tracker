@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { PensionChart } from "@/components/PensionChart";
 import { useColors } from "@/hooks/useColors";
+import { useUserName } from "@/hooks/useUserName";
 import {
   useGetPensionInsights,
   useListPensionEntries,
@@ -44,6 +45,7 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { name } = useUserName();
 
   const { data: entries, isLoading: entriesLoading, refetch: refetchEntries } = useListPensionEntries();
   const { data: insights, isLoading: insightsLoading, refetch: refetchInsights } = useGetPensionInsights();
@@ -104,8 +106,13 @@ export default function DashboardScreen() {
       showsVerticalScrollIndicator={false}
     >
       <Text style={[styles.heading, { color: colors.foreground }]}>
-        Pension Tracker
+        {name ? `Hello, ${name}` : "Pension Tracker"}
       </Text>
+      {name ? (
+        <Text style={[styles.subheading, { color: colors.mutedForeground }]}>
+          Pension Tracker
+        </Text>
+      ) : null}
 
       {!hasData ? (
         <View
@@ -328,7 +335,12 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontFamily: "Inter_700Bold",
     letterSpacing: -0.5,
-    marginBottom: 20,
+    marginBottom: 4,
+  },
+  subheading: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    marginBottom: 18,
   },
   heroCard: {
     padding: 24,

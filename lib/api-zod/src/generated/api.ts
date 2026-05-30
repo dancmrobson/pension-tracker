@@ -53,6 +53,7 @@ export const AnalyzePensionImageResponse = zod.object({
   "entry_date": zod.string().nullish().describe('Extracted date in YYYY-MM-DD format'),
   "pot_value": zod.number().nullish().describe('Extracted pension pot value'),
   "total_contributions": zod.number().nullish().describe('Extracted total contributions'),
+  "user_name": zod.string().nullish().describe('User\'s first name extracted from a greeting like Hello [Name]'),
   "confidence": zod.string().describe('Confidence level - high, medium, or low'),
   "message": zod.string().describe('Description of what was extracted')
 })

@@ -189,6 +189,10 @@ components:
           type: number
           nullable: true
           description: Extracted total contributions
+        user_name:
+          type: string
+          nullable: true
+          description: User's first name extracted from a greeting like Hello [Name]
         confidence:
           type: string
           description: Confidence level - high, medium, or low

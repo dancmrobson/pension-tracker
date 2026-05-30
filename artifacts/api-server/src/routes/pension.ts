@@ -58,9 +58,10 @@ pensionRouter.post("/pension/entries/analyze", async (req, res) => {
 1. Pension pot value — the total current value (labeled "Your pension pot value", "Total value", "Current value", "Pension value", etc.)
 2. The date the value was calculated (labeled "Value calculated on", "As of", "Updated", "Date", etc.)
 3. Total contributions (labeled "Total contributions", "Total paid in", "Contributions to date", etc.) — if visible
+4. The user's first name — look for any greeting such as "Hello [Name]", "Hi [Name]", "Welcome [Name]", "Good morning [Name]", etc. Extract only the first name, not a full sentence.
 
 Reply ONLY with a JSON object (no markdown, no extra text):
-{"pot_value": <number or null>, "entry_date": "<YYYY-MM-DD string or null>", "total_contributions": <number or null>, "confidence": "<high|medium|low>", "message": "<one sentence describing what was found>"}`,
+{"pot_value": <number or null>, "entry_date": "<YYYY-MM-DD string or null>", "total_contributions": <number or null>, "user_name": "<first name string or null>", "confidence": "<high|medium|low>", "message": "<one sentence describing what was found>"}`,
             },
           ],
         },

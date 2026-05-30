@@ -42,6 +42,8 @@ export interface AnalyzedPensionData {
   pot_value?: number | null;
   /** Extracted total contributions */
   total_contributions?: number | null;
+  /** User's first name extracted from a greeting like Hello [Name] */
+  user_name?: string | null;
   /** Confidence level - high, medium, or low */
   confidence: string;
   /** Description of what was extracted */
