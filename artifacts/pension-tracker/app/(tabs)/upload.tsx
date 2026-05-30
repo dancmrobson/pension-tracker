@@ -4,6 +4,7 @@ import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
+import * as XLSX from "xlsx";
 import { useFocusEffect, useScrollToTop } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import React, { useRef, useState } from "react";
@@ -196,7 +197,17 @@ export default function UploadScreen() {
   const pickAndUploadCsv = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ["text/csv", "text/comma-separated-values", "application/csv", "public.comma-separated-values-text", "*/*"],
+        type: [
+          "text/csv",
+          "text/comma-separated-values",
+          "application/csv",
+          "public.comma-separated-values-text",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "application/vnd.ms-excel",
+          "com.microsoft.excel.xls",
+          "org.openxmlformats.spreadsheetml.sheet",
+          "*/*",
+        ],
         copyToCacheDirectory: true,
       });
 
@@ -204,9 +215,10 @@ export default function UploadScreen() {
 
       const asset = result.assets[0];
       const fileName = asset.name ?? "contributions.csv";
+      const lower = fileName.toLowerCase();
 
-      if (!fileName.toLowerCase().endsWith(".csv")) {
-        Alert.alert("Wrong File Type", "Please select a CSV file exported from your pension provider.");
+      if (!lower.endsWith(".csv") && !lower.endsWith(".xlsx") && !lower.endsWith(".xls")) {
+        Alert.alert("Wrong File Type", "Please select a CSV or Excel file exported from your pension provider.");
         return;
       }
 
@@ -214,9 +226,26 @@ export default function UploadScreen() {
       setCsvUploading(true);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      const csvText = await FileSystem.readAsStringAsync(asset.uri, {
-        encoding: "utf8",
-      });
+      let csvText: string;
+
+      if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
+        // Read as base64, parse with SheetJS, convert first sheet → CSV string
+        const b64 = await FileSystem.readAsStringAsync(asset.uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        const workbook = XLSX.read(b64, { type: "base64" });
+        const sheetName = workbook.SheetNames[0];
+        if (!sheetName) {
+          Alert.alert("Empty File", "The Excel file appears to have no sheets.");
+          setCsvUploading(false);
+          return;
+        }
+        csvText = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
+      } else {
+        csvText = await FileSystem.readAsStringAsync(asset.uri, {
+          encoding: "utf8",
+        });
+      }
 
       csvMutation.mutate({ data: { csv_text: csvText } });
     } catch {
@@ -497,7 +526,7 @@ export default function UploadScreen() {
               Contribution History
             </Text>
             <Text style={[styles.csvSubtitle, { color: colors.mutedForeground }]}>
-              Import a CSV from your pension provider to see employer vs. employee contributions on your chart
+              Import a CSV or Excel file from your pension provider to see employer vs. employee contributions on your chart
             </Text>
           </View>
         </View>
@@ -529,13 +558,13 @@ export default function UploadScreen() {
           ) : (
             <>
               <Ionicons name="cloud-upload-outline" size={18} color="#fff" />
-              <Text style={styles.csvBtnText}>Choose CSV File</Text>
+              <Text style={styles.csvBtnText}>Choose CSV or Excel File</Text>
             </>
           )}
         </TouchableOpacity>
 
         <Text style={[styles.csvHint, { color: colors.mutedForeground }]}>
-          Expects columns: date, contribution type, amount. Re-uploading replaces existing records.
+          Accepts CSV or Excel (.xlsx). Expects columns: date, contribution type, amount. Re-uploading replaces existing records.
         </Text>
       </View>
 
