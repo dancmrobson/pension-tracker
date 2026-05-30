@@ -4,8 +4,11 @@ import {
   PanResponder,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
+  TouchableOpacity,
   View,
   useWindowDimensions,
 } from "react-native";
@@ -20,6 +23,8 @@ import Svg, {
   Text as SvgText,
 } from "react-native-svg";
 import { useColors } from "@/hooks/useColors";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface DataPoint {
   date: string;
@@ -40,10 +45,16 @@ interface PensionChartProps {
 
 type ChartPoint = { x: number; y: number; date: string; value: number };
 type Padding = { left: number; right: number; top: number; bottom: number };
+type RangePreset = "3M" | "6M" | "1Y" | "3Y" | "5Y" | "All" | "Custom";
+
+// ─── Constants ───────────────────────────────────────────────────────────────
 
 const PORT_PAD: Padding = { left: 52, right: 16, top: 18, bottom: 44 };
 const LAND_PAD: Padding = { left: 64, right: 32, top: 36, bottom: 56 };
 const MAX_ZOOM = 10;
+const RANGE_PRESETS: RangePreset[] = ["3M", "6M", "1Y", "3Y", "5Y", "All", "Custom"];
+
+// ─── Utility functions ────────────────────────────────────────────────────────
 
 function formatShortDate(dateStr: string): string {
   const d = new Date(dateStr + "T00:00:00");
@@ -52,11 +63,7 @@ function formatShortDate(dateStr: string): string {
 
 function formatFullDate(dateStr: string): string {
   const d = new Date(dateStr + "T00:00:00");
-  return d.toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function formatAxisValue(v: number): string {
@@ -66,28 +73,39 @@ function formatAxisValue(v: number): string {
 }
 
 function formatCurrency(v: number): string {
-  return `£${v.toLocaleString("en-GB", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+  return `£${v.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-// Compute cumulative employee + employer contributions as of each pension entry date
+function applyRangeFilter(
+  data: DataPoint[],
+  preset: RangePreset,
+  from: string,
+  to: string
+): DataPoint[] {
+  if (preset === "All") return data;
+  if (preset === "Custom") {
+    let f = data;
+    if (from.match(/^\d{4}-\d{2}-\d{2}$/)) f = f.filter((d) => d.date >= from);
+    if (to.match(/^\d{4}-\d{2}-\d{2}$/)) f = f.filter((d) => d.date <= to);
+    return f;
+  }
+  const months = { "3M": 3, "6M": 6, "1Y": 12, "3Y": 36, "5Y": 60 }[preset as Exclude<RangePreset, "All" | "Custom">];
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - months);
+  const cutoffStr = cutoff.toISOString().split("T")[0];
+  return data.filter((d) => d.date >= cutoffStr);
+}
+
 function computeCumulativeContribs(
   entryDates: string[],
   contributions: ContributionPoint[]
 ): { employee: number; employer: number; total: number }[] {
   const sorted = [...contributions].sort((a, b) => a.date.localeCompare(b.date));
   return entryDates.map((entryDate) => {
-    let emp = 0;
-    let emr = 0;
+    let emp = 0, emr = 0;
     for (const c of sorted) {
-      if (c.date <= entryDate) {
-        emp += c.employee;
-        emr += c.employer;
-      } else {
-        break;
-      }
+      if (c.date <= entryDate) { emp += c.employee; emr += c.employer; }
+      else break;
     }
     return { employee: emp, employer: emr, total: emp + emr };
   });
@@ -99,10 +117,7 @@ function findNearest(pts: ChartPoint[], touchX: number): string | null {
   let minDist = Infinity;
   for (const pt of pts) {
     const dist = Math.abs(touchX - pt.x);
-    if (dist < minDist) {
-      minDist = dist;
-      nearest = pt;
-    }
+    if (dist < minDist) { minDist = dist; nearest = pt; }
   }
   return nearest.date;
 }
@@ -127,8 +142,7 @@ function computeGeometry(
       points: [] as ChartPoint[],
       xLabels: [] as { label: string; x: number }[],
       yTicks: [] as { label: string; y: number }[],
-      innerW,
-      innerH,
+      innerW, innerH,
       yOf: (_v: number) => 0,
     };
   }
@@ -153,10 +167,7 @@ function computeGeometry(
   const yOf = (v: number) => pad.top + ((maxV - v) / (maxV - minV)) * innerH;
 
   const points: ChartPoint[] = data.map((d) => ({
-    x: xOf(d.date),
-    y: yOf(d.value),
-    date: d.date,
-    value: d.value,
+    x: xOf(d.date), y: yOf(d.value), date: d.date, value: d.value,
   }));
 
   const labelCount = Math.min(data.length, 5);
@@ -168,8 +179,7 @@ function computeGeometry(
     .map((d) => ({ label: formatShortDate(d.date), x: xOf(d.date) }))
     .filter(({ label, x }) => {
       if (seen.has(label) || x - lastX < 42) return false;
-      seen.add(label);
-      lastX = x;
+      seen.add(label); lastX = x;
       return true;
     });
 
@@ -187,33 +197,27 @@ function buildLinePath(pts: { x: number; y: number }[]): string {
   if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`;
   let d = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
   for (let i = 1; i < pts.length; i++) {
-    const prev = pts[i - 1];
-    const curr = pts[i];
+    const prev = pts[i - 1], curr = pts[i];
     const cpX = (prev.x + curr.x) / 2;
     d += ` C ${cpX.toFixed(1)} ${prev.y.toFixed(1)} ${cpX.toFixed(1)} ${curr.y.toFixed(1)} ${curr.x.toFixed(1)} ${curr.y.toFixed(1)}`;
   }
   return d;
 }
 
-// Build a closed fill path between two smooth lines (top forward, bottom backward)
-function buildFillPath(
-  topPts: { x: number; y: number }[],
-  bottomPts: { x: number; y: number }[]
-): string {
+function buildFillPath(topPts: { x: number; y: number }[], bottomPts: { x: number; y: number }[]): string {
   if (topPts.length < 2 || bottomPts.length < 2) return "";
   let d = buildLinePath(topPts);
-  // Line to last bottom point
   d += ` L ${bottomPts[bottomPts.length - 1].x.toFixed(1)} ${bottomPts[bottomPts.length - 1].y.toFixed(1)}`;
-  // Backward through bottom
   for (let i = bottomPts.length - 2; i >= 0; i--) {
-    const prev = bottomPts[i + 1];
-    const curr = bottomPts[i];
+    const prev = bottomPts[i + 1], curr = bottomPts[i];
     const cpX = (prev.x + curr.x) / 2;
     d += ` C ${cpX.toFixed(1)} ${prev.y.toFixed(1)} ${cpX.toFixed(1)} ${curr.y.toFixed(1)} ${curr.x.toFixed(1)} ${curr.y.toFixed(1)}`;
   }
   d += " Z";
   return d;
 }
+
+// ─── ChartSvg (pure render, unchanged) ───────────────────────────────────────
 
 interface ChartSvgProps {
   data: DataPoint[];
@@ -226,31 +230,16 @@ interface ChartSvgProps {
   fontSize?: number;
 }
 
-function ChartSvg({
-  data,
-  contributions,
-  chartW,
-  chartH,
-  pad,
-  activeDate,
-  colors,
-  fontSize = 10,
-}: ChartSvgProps) {
+function ChartSvg({ data, contributions, chartW, chartH, pad, activeDate, colors, fontSize = 10 }: ChartSvgProps) {
   const hasContribs = (contributions?.length ?? 0) > 0;
 
-  // Cumulative contribution amounts at each entry date
   const cumulContribs = useMemo(
-    () =>
-      hasContribs && contributions
-        ? computeCumulativeContribs(
-            data.map((d) => d.date),
-            contributions
-          )
-        : null,
+    () => hasContribs && contributions
+      ? computeCumulativeContribs(data.map((d) => d.date), contributions)
+      : null,
     [data, contributions, hasContribs]
   );
 
-  // Include contribution values in Y-scale so they're always visible
   const extraValues = useMemo(() => {
     if (!cumulContribs) return undefined;
     return cumulContribs.flatMap((c) => [c.employee, c.total]);
@@ -261,23 +250,17 @@ function ChartSvg({
     [data, chartW, chartH, pad, extraValues]
   );
   const { points, xLabels, yTicks, innerW, innerH, yOf } = geo;
-
   if (points.length === 0) return null;
 
-  const isPositive =
-    data.length >= 2 ? data[data.length - 1].value >= data[0].value : true;
+  const isPositive = data.length >= 2 ? data[data.length - 1].value >= data[0].value : true;
   const lineColor = isPositive ? colors.positive : colors.negative;
-
   const linePath = buildLinePath(points);
   const bottomY = pad.top + innerH;
 
-  // Pot value gradient fill (existing)
-  const potFillPath =
-    points.length > 1
-      ? `${linePath} L ${points[points.length - 1].x.toFixed(1)} ${bottomY} L ${points[0].x.toFixed(1)} ${bottomY} Z`
-      : "";
+  const potFillPath = points.length > 1
+    ? `${linePath} L ${points[points.length - 1].x.toFixed(1)} ${bottomY} L ${points[0].x.toFixed(1)} ${bottomY} Z`
+    : "";
 
-  // Contribution lines & fills
   let employeePts: { x: number; y: number }[] = [];
   let totalContribPts: { x: number; y: number }[] = [];
   let investReturnFillPath = "";
@@ -285,38 +268,21 @@ function ChartSvg({
   let employeeBandFillPath = "";
 
   if (hasContribs && cumulContribs && points.length >= 2) {
-    employeePts = points.map((pt, i) => ({
-      x: pt.x,
-      y: yOf(cumulContribs[i].employee),
-    }));
-    totalContribPts = points.map((pt, i) => ({
-      x: pt.x,
-      y: yOf(cumulContribs[i].total),
-    }));
-
-    // Investment return fill: between totalContrib line and potValue line
+    employeePts = points.map((pt, i) => ({ x: pt.x, y: yOf(cumulContribs[i].employee) }));
+    totalContribPts = points.map((pt, i) => ({ x: pt.x, y: yOf(cumulContribs[i].total) }));
     investReturnFillPath = buildFillPath(points, totalContribPts);
-
-    // Employer band: between totalContrib and employee lines
-    const employerBottomPts = employeePts;
-    employerBandFillPath = buildFillPath(totalContribPts, employerBottomPts);
-
-    // Employee band: from employee line down to chart baseline
+    employerBandFillPath = buildFillPath(totalContribPts, employeePts);
     const baselinePts = points.map((pt) => ({ x: pt.x, y: bottomY }));
     employeeBandFillPath = buildFillPath(employeePts, baselinePts);
   }
 
-  const activePt = activeDate
-    ? (points.find((p) => p.date === activeDate) ?? null)
-    : null;
+  const activePt = activeDate ? (points.find((p) => p.date === activeDate) ?? null) : null;
   const activeIdx = activePt ? points.indexOf(activePt) : -1;
 
   const TT_W = 160;
   const TT_H = hasContribs && activeIdx >= 0 && cumulContribs ? 82 : 52;
   const ttX = activePt
-    ? activePt.x + TT_W + 10 > pad.left + innerW
-      ? activePt.x - TT_W - 8
-      : activePt.x + 8
+    ? activePt.x + TT_W + 10 > pad.left + innerW ? activePt.x - TT_W - 8 : activePt.x + 8
     : 0;
   const ttY = pad.top + 4;
 
@@ -333,206 +299,85 @@ function ChartSvg({
         </LinearGradient>
       </Defs>
 
-      {/* Grid lines */}
       {yTicks.map((tick, i) => (
         <React.Fragment key={i}>
-          <Line
-            x1={pad.left}
-            y1={tick.y}
-            x2={pad.left + innerW}
-            y2={tick.y}
-            stroke={colors.border}
-            strokeWidth="1"
-            strokeDasharray="4,4"
-          />
-          <SvgText
-            x={pad.left - 6}
-            y={tick.y + 4}
-            fontSize={fontSize}
-            fill={colors.mutedForeground}
-            textAnchor="end"
-            fontFamily="Inter_400Regular"
-          >
+          <Line x1={pad.left} y1={tick.y} x2={pad.left + innerW} y2={tick.y}
+            stroke={colors.border} strokeWidth="1" strokeDasharray="4,4" />
+          <SvgText x={pad.left - 6} y={tick.y + 4} fontSize={fontSize}
+            fill={colors.mutedForeground} textAnchor="end" fontFamily="Inter_400Regular">
             {tick.label}
           </SvgText>
         </React.Fragment>
       ))}
 
-      {/* X labels (hidden when crosshair active) */}
-      {!activePt &&
-        xLabels.map((lbl, i) => (
-          <SvgText
-            key={i}
-            x={lbl.x}
-            y={pad.top + innerH + fontSize + 6}
-            fontSize={fontSize}
-            fill={colors.mutedForeground}
-            textAnchor="middle"
-            fontFamily="Inter_400Regular"
-          >
-            {lbl.label}
-          </SvgText>
-        ))}
+      {!activePt && xLabels.map((lbl, i) => (
+        <SvgText key={i} x={lbl.x} y={pad.top + innerH + fontSize + 6} fontSize={fontSize}
+          fill={colors.mutedForeground} textAnchor="middle" fontFamily="Inter_400Regular">
+          {lbl.label}
+        </SvgText>
+      ))}
 
-      {/* === Contribution fills (rendered below pot value line) === */}
-      {hasContribs && employeeBandFillPath ? (
-        <Path d={employeeBandFillPath} fill={colors.primary} opacity="0.18" />
-      ) : null}
-      {hasContribs && employerBandFillPath ? (
-        <Path d={employerBandFillPath} fill={colors.accent} opacity="0.28" />
-      ) : null}
-      {hasContribs && investReturnFillPath ? (
-        <Path d={investReturnFillPath} fill="url(#retGrad)" />
-      ) : null}
+      {hasContribs && employeeBandFillPath ? <Path d={employeeBandFillPath} fill={colors.primary} opacity="0.18" /> : null}
+      {hasContribs && employerBandFillPath ? <Path d={employerBandFillPath} fill={colors.accent} opacity="0.28" /> : null}
+      {hasContribs && investReturnFillPath ? <Path d={investReturnFillPath} fill="url(#retGrad)" /> : null}
+      {!hasContribs && potFillPath ? <Path d={potFillPath} fill="url(#potGrad)" /> : null}
 
-      {/* Pot value gradient fill (only when no contributions) */}
-      {!hasContribs && potFillPath ? (
-        <Path d={potFillPath} fill="url(#potGrad)" />
-      ) : null}
-
-      {/* Contribution lines */}
       {hasContribs && employeePts.length > 1 ? (
-        <Path
-          d={buildLinePath(employeePts)}
-          stroke={colors.primary}
-          strokeWidth="1.5"
-          fill="none"
-          strokeDasharray="5,3"
-          opacity="0.7"
-        />
+        <Path d={buildLinePath(employeePts)} stroke={colors.primary} strokeWidth="1.5"
+          fill="none" strokeDasharray="5,3" opacity="0.7" />
       ) : null}
       {hasContribs && totalContribPts.length > 1 ? (
-        <Path
-          d={buildLinePath(totalContribPts)}
-          stroke={colors.accent}
-          strokeWidth="1.5"
-          fill="none"
-          strokeDasharray="5,3"
-          opacity="0.85"
-        />
+        <Path d={buildLinePath(totalContribPts)} stroke={colors.accent} strokeWidth="1.5"
+          fill="none" strokeDasharray="5,3" opacity="0.85" />
       ) : null}
 
-      {/* Pot value line */}
       {points.length > 1 ? (
-        <Path
-          d={linePath}
-          stroke={lineColor}
-          strokeWidth="2.5"
-          fill="none"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+        <Path d={linePath} stroke={lineColor} strokeWidth="2.5"
+          fill="none" strokeLinecap="round" strokeLinejoin="round" />
       ) : null}
 
-      {/* Data point dots */}
       {points.map((pt, i) => {
         if (pt.date === activeDate) return null;
         return (
-          <Circle
-            key={i}
-            cx={pt.x}
-            cy={pt.y}
+          <Circle key={i} cx={pt.x} cy={pt.y}
             r={i === points.length - 1 ? 5 : 3}
             fill={i === points.length - 1 ? colors.accent : lineColor}
-            stroke="#fff"
-            strokeWidth="1.5"
-          />
+            stroke="#fff" strokeWidth="1.5" />
         );
       })}
 
-      {/* Crosshair + tooltip */}
       {activePt && (
         <>
-          <Line
-            x1={activePt.x}
-            y1={pad.top}
-            x2={activePt.x}
-            y2={pad.top + innerH}
-            stroke={colors.foreground}
-            strokeWidth="1"
-            strokeDasharray="4,3"
-            opacity="0.25"
-          />
-          <Circle
-            cx={activePt.x}
-            cy={activePt.y}
-            r={7}
-            fill={colors.accent}
-            stroke="#fff"
-            strokeWidth="2.5"
-          />
+          <Line x1={activePt.x} y1={pad.top} x2={activePt.x} y2={pad.top + innerH}
+            stroke={colors.foreground} strokeWidth="1" strokeDasharray="4,3" opacity="0.25" />
+          <Circle cx={activePt.x} cy={activePt.y} r={7} fill={colors.accent} stroke="#fff" strokeWidth="2.5" />
 
-          {/* Contribution crosshair dots */}
           {hasContribs && cumulContribs && activeIdx >= 0 ? (
             <>
-              <Circle
-                cx={activePt.x}
-                cy={yOf(cumulContribs[activeIdx].employee)}
-                r={4}
-                fill={colors.primary}
-                stroke="#fff"
-                strokeWidth="1.5"
-              />
-              <Circle
-                cx={activePt.x}
-                cy={yOf(cumulContribs[activeIdx].total)}
-                r={4}
-                fill={colors.accent}
-                stroke="#fff"
-                strokeWidth="1.5"
-              />
+              <Circle cx={activePt.x} cy={yOf(cumulContribs[activeIdx].employee)}
+                r={4} fill={colors.primary} stroke="#fff" strokeWidth="1.5" />
+              <Circle cx={activePt.x} cy={yOf(cumulContribs[activeIdx].total)}
+                r={4} fill={colors.accent} stroke="#fff" strokeWidth="1.5" />
             </>
           ) : null}
 
-          <Rect
-            x={ttX}
-            y={ttY}
-            width={TT_W}
-            height={TT_H}
-            rx="10"
-            fill={colors.primary}
-          />
-          <SvgText
-            x={ttX + TT_W / 2}
-            y={ttY + 16}
-            fontSize={fontSize}
-            fill="rgba(255,255,255,0.7)"
-            textAnchor="middle"
-            fontFamily="Inter_400Regular"
-          >
+          <Rect x={ttX} y={ttY} width={TT_W} height={TT_H} rx="10" fill={colors.primary} />
+          <SvgText x={ttX + TT_W / 2} y={ttY + 16} fontSize={fontSize}
+            fill="rgba(255,255,255,0.7)" textAnchor="middle" fontFamily="Inter_400Regular">
             {formatFullDate(activePt.date)}
           </SvgText>
-          <SvgText
-            x={ttX + TT_W / 2}
-            y={ttY + 34}
-            fontSize={fontSize + 4}
-            fill="#fff"
-            textAnchor="middle"
-            fontFamily="Inter_700Bold"
-          >
+          <SvgText x={ttX + TT_W / 2} y={ttY + 34} fontSize={fontSize + 4}
+            fill="#fff" textAnchor="middle" fontFamily="Inter_700Bold">
             {formatCurrency(activePt.value)}
           </SvgText>
-
           {hasContribs && cumulContribs && activeIdx >= 0 ? (
             <>
-              <SvgText
-                x={ttX + TT_W / 2}
-                y={ttY + 52}
-                fontSize={fontSize - 1}
-                fill="rgba(255,255,255,0.65)"
-                textAnchor="middle"
-                fontFamily="Inter_400Regular"
-              >
+              <SvgText x={ttX + TT_W / 2} y={ttY + 52} fontSize={fontSize - 1}
+                fill="rgba(255,255,255,0.65)" textAnchor="middle" fontFamily="Inter_400Regular">
                 {`Employee: ${formatCurrency(cumulContribs[activeIdx].employee)}`}
               </SvgText>
-              <SvgText
-                x={ttX + TT_W / 2}
-                y={ttY + 68}
-                fontSize={fontSize - 1}
-                fill="rgba(255,255,255,0.65)"
-                textAnchor="middle"
-                fontFamily="Inter_400Regular"
-              >
+              <SvgText x={ttX + TT_W / 2} y={ttY + 68} fontSize={fontSize - 1}
+                fill="rgba(255,255,255,0.65)" textAnchor="middle" fontFamily="Inter_400Regular">
                 {`Employer: ${formatCurrency(cumulContribs[activeIdx].employer)}`}
               </SvgText>
             </>
@@ -543,19 +388,27 @@ function ChartSvg({
   );
 }
 
+// ─── PensionChart (main component) ───────────────────────────────────────────
+
 export function PensionChart({ data, contributions, height = 220 }: PensionChartProps) {
   const colors = useColors();
   const { width: winW, height: winH } = useWindowDimensions();
   const autoLandscape = winW > winH && Platform.OS !== "web";
 
+  // ── UI state ──
   const [containerWidth, setContainerWidth] = useState(0);
   const [modalSize, setModalSize] = useState({ w: 0, h: 0 });
   const [activeDate, setActiveDate] = useState<string | null>(null);
   const [zoomScale, setZoomScale] = useState(1);
+  const [scrollOffset, setScrollOffset] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
+  const [rangePreset, setRangePreset] = useState<RangePreset>("All");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
 
   const modalVisible = autoLandscape || fullscreen;
 
+  // ── Gesture refs (stable across renders, safe for PanResponder closures) ──
   const portraitPtsRef = useRef<ChartPoint[]>([]);
   const modalPtsRef = useRef<ChartPoint[]>([]);
   const zoomRef = useRef(1);
@@ -563,24 +416,42 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
   const landStartX = useRef(0);
   const pinchStartDist = useRef<number | null>(null);
   const pinchStartZoom = useRef(1);
-  const gestureMode = useRef<string>("idle");
+  const gestureMode = useRef<"idle" | "undecided" | "crosshair" | "scroll" | "pinch">("idle");
   const lastTapTime = useRef(0);
+  const scrollOffsetRef = useRef(0);
+  const scrollStartRef = useRef(0);
+  const innerWRef = useRef(0);
+  const rangeFilteredLenRef = useRef(0);
+  const visibleLenRef = useRef(0);
 
+  // Mirror state into refs (synchronously in render for PanResponder access)
   zoomRef.current = zoomScale;
+  scrollOffsetRef.current = scrollOffset;
+
+  // ── Derived data ──
+  const rangeFilteredData = useMemo(
+    () => applyRangeFilter(data, rangePreset, customFrom, customTo),
+    [data, rangePreset, customFrom, customTo]
+  );
 
   const visibleData = useMemo(() => {
-    if (zoomScale <= 1 || data.length <= 2) return data;
-    const count = Math.max(2, Math.ceil(data.length / zoomScale));
-    return data.slice(Math.max(0, data.length - count));
-  }, [data, zoomScale]);
+    if (zoomScale <= 1 || rangeFilteredData.length <= 2) return rangeFilteredData;
+    const count = Math.max(2, Math.ceil(rangeFilteredData.length / zoomScale));
+    const maxOff = Math.max(0, rangeFilteredData.length - count);
+    const off = Math.min(scrollOffset, maxOff);
+    return rangeFilteredData.slice(off, off + count);
+  }, [rangeFilteredData, zoomScale, scrollOffset]);
 
-  // Geometry just for updating pts refs (used by PanResponder)
+  // Update measurement refs in render
+  rangeFilteredLenRef.current = rangeFilteredData.length;
+  visibleLenRef.current = visibleData.length;
+
+  // ── Geometry (for hit-test refs used by PanResponder) ──
   const hasContribsForScale = (contributions?.length ?? 0) > 0;
   const cumulForScale = useMemo(
-    () =>
-      hasContribsForScale && contributions
-        ? computeCumulativeContribs(visibleData.map((d) => d.date), contributions)
-        : null,
+    () => hasContribsForScale && contributions
+      ? computeCumulativeContribs(visibleData.map((d) => d.date), contributions)
+      : null,
     [visibleData, contributions, hasContribsForScale]
   );
   const extraVals = useMemo(
@@ -589,23 +460,41 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
   );
 
   const portraitGeo = useMemo(
-    () =>
-      containerWidth > 0
-        ? computeGeometry(visibleData, containerWidth, height, PORT_PAD, extraVals)
-        : { points: [] as ChartPoint[], xLabels: [], yTicks: [], innerW: 0, innerH: 0, yOf: (_: number) => 0 },
+    () => containerWidth > 0
+      ? computeGeometry(visibleData, containerWidth, height, PORT_PAD, extraVals)
+      : { points: [] as ChartPoint[], xLabels: [], yTicks: [], innerW: 0, innerH: 0, yOf: (_: number) => 0 },
     [visibleData, containerWidth, height, extraVals]
   );
   const modalGeo = useMemo(
-    () =>
-      modalSize.w > 0
-        ? computeGeometry(visibleData, modalSize.w, modalSize.h, LAND_PAD, extraVals)
-        : { points: [] as ChartPoint[], xLabels: [], yTicks: [], innerW: 0, innerH: 0, yOf: (_: number) => 0 },
+    () => modalSize.w > 0
+      ? computeGeometry(visibleData, modalSize.w, modalSize.h, LAND_PAD, extraVals)
+      : { points: [] as ChartPoint[], xLabels: [], yTicks: [], innerW: 0, innerH: 0, yOf: (_: number) => 0 },
     [visibleData, modalSize.w, modalSize.h, extraVals]
   );
 
   portraitPtsRef.current = portraitGeo.points;
   modalPtsRef.current = modalGeo.points;
+  innerWRef.current = portraitGeo.innerW;
 
+  // ── Actions ──
+  const handleRangeChange = (preset: RangePreset) => {
+    setRangePreset(preset);
+    setZoomScale(1);
+    zoomRef.current = 1;
+    setScrollOffset(0);
+    scrollOffsetRef.current = 0;
+    setActiveDate(null);
+  };
+
+  const resetView = () => {
+    setZoomScale(1);
+    zoomRef.current = 1;
+    setScrollOffset(0);
+    scrollOffsetRef.current = 0;
+    setActiveDate(null);
+  };
+
+  // ── Portrait PanResponder ──
   const portraitPan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -621,22 +510,26 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
         } else {
           const now = Date.now();
           if (now - lastTapTime.current < 280) {
+            // Double-tap → reset
             setZoomScale(1);
             zoomRef.current = 1;
+            setScrollOffset(0);
+            scrollOffsetRef.current = 0;
             gestureMode.current = "idle";
             lastTapTime.current = 0;
             return;
           }
           lastTapTime.current = now;
           portStartX.current = evt.nativeEvent.locationX;
-          gestureMode.current = "crosshair";
-          setActiveDate(findNearest(portraitPtsRef.current, portStartX.current));
+          scrollStartRef.current = scrollOffsetRef.current;
+          gestureMode.current = "undecided";
         }
       },
 
       onPanResponderMove: (evt, gs) => {
         const touches = evt.nativeEvent.touches;
 
+        // Upgrade to pinch if second finger appears
         if (touches.length >= 2 && gestureMode.current !== "pinch") {
           pinchStartDist.current = pinchDistance(touches);
           pinchStartZoom.current = zoomRef.current;
@@ -647,18 +540,59 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
         if (gestureMode.current === "pinch" && touches.length >= 2) {
           const dist = pinchDistance(touches);
           if (pinchStartDist.current && pinchStartDist.current > 0) {
-            const newZoom = Math.max(
-              1,
-              Math.min(pinchStartZoom.current * (dist / pinchStartDist.current), MAX_ZOOM)
-            );
+            const newZoom = Math.max(1, Math.min(
+              pinchStartZoom.current * (dist / pinchStartDist.current),
+              MAX_ZOOM
+            ));
+            const totalLen = rangeFilteredLenRef.current;
+            const newVisCount = Math.max(2, Math.ceil(totalLen / newZoom));
+
+            let newOff: number;
+            if (pinchStartZoom.current <= 1.05) {
+              // Anchored to right (latest data) when starting from full view
+              newOff = Math.max(0, totalLen - newVisCount);
+            } else {
+              const oldVisCount = Math.max(2, Math.ceil(totalLen / pinchStartZoom.current));
+              const centerIdx = scrollOffsetRef.current + oldVisCount / 2;
+              newOff = Math.max(0, Math.min(
+                Math.round(centerIdx - newVisCount / 2),
+                Math.max(0, totalLen - newVisCount)
+              ));
+            }
+
             setZoomScale(newZoom);
             zoomRef.current = newZoom;
+            setScrollOffset(newOff);
+            scrollOffsetRef.current = newOff;
           }
           return;
         }
 
+        // Resolve undecided gesture mode
+        if (gestureMode.current === "undecided") {
+          const absDx = Math.abs(gs.dx);
+          const absDy = Math.abs(gs.dy);
+          if (absDx > 12 && absDx > absDy * 1.5 && zoomRef.current > 1.1) {
+            gestureMode.current = "scroll";
+            setActiveDate(null);
+          } else if (absDx > 5 || absDy > 5) {
+            gestureMode.current = "crosshair";
+          }
+        }
+
         if (gestureMode.current === "crosshair") {
           setActiveDate(findNearest(portraitPtsRef.current, portStartX.current + gs.dx));
+        }
+
+        if (gestureMode.current === "scroll") {
+          const pixPerPoint = innerWRef.current / Math.max(1, visibleLenRef.current - 1);
+          if (pixPerPoint > 0) {
+            const pointDelta = Math.round(-gs.dx / pixPerPoint);
+            const maxOff = Math.max(0, rangeFilteredLenRef.current - visibleLenRef.current);
+            const newOff = Math.max(0, Math.min(scrollStartRef.current + pointDelta, maxOff));
+            setScrollOffset(newOff);
+            scrollOffsetRef.current = newOff;
+          }
         }
       },
 
@@ -675,6 +609,7 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
     })
   ).current;
 
+  // ── Modal (landscape / fullscreen) PanResponder — crosshair only ──
   const modalPan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -691,75 +626,193 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
     })
   ).current;
 
+  // ── Scroll progress indicator ──
+  const showZoomUI = zoomScale > 1.08;
+  const thumbFraction = rangeFilteredData.length > 0
+    ? Math.max(0.08, visibleData.length / rangeFilteredData.length)
+    : 1;
+  const scrollFraction = rangeFilteredData.length > visibleData.length
+    ? scrollOffset / Math.max(1, rangeFilteredData.length - visibleData.length)
+    : 0;
+
+  const hasContribs = (contributions?.length ?? 0) > 0;
+
   if (data.length === 0) {
     return (
       <View style={[styles.empty, { height }]}>
-        <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-          No data yet
-        </Text>
+        <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No data yet</Text>
       </View>
     );
   }
 
-  const hasContribs = (contributions?.length ?? 0) > 0;
-  const showZoomLabel = zoomScale > 1.08;
-
   return (
     <>
-      <View style={styles.chartWrapper}>
-        <View
-          style={styles.container}
-          onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
-          {...portraitPan.panHandlers}
-        >
-          {containerWidth > 0 && (
-            <ChartSvg
-              data={visibleData}
-              contributions={contributions}
-              chartW={containerWidth}
-              chartH={height}
-              pad={PORT_PAD}
-              activeDate={activeDate}
-              colors={colors}
-              fontSize={10}
-            />
+      {/* ── Range preset chips ── */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.rangeRow}
+        style={styles.rangeScroll}
+      >
+        {RANGE_PRESETS.map((preset) => {
+          const active = rangePreset === preset;
+          return (
+            <TouchableOpacity
+              key={preset}
+              style={[
+                styles.rangeChip,
+                { backgroundColor: active ? colors.primary : colors.secondary },
+              ]}
+              onPress={() => handleRangeChange(preset)}
+              activeOpacity={0.75}
+            >
+              <Text
+                style={[
+                  styles.rangeChipText,
+                  {
+                    color: active ? "#fff" : colors.mutedForeground,
+                    fontFamily: active ? "Inter_600SemiBold" : "Inter_400Regular",
+                  },
+                ]}
+              >
+                {preset}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {/* ── Custom date range inputs ── */}
+      {rangePreset === "Custom" && (
+        <View style={styles.customDateRow}>
+          <TextInput
+            style={[
+              styles.dateInput,
+              {
+                color: colors.foreground,
+                backgroundColor: colors.secondary,
+                borderColor: colors.border,
+              },
+            ]}
+            placeholder="From YYYY-MM-DD"
+            placeholderTextColor={colors.mutedForeground}
+            value={customFrom}
+            onChangeText={(t) => {
+              setCustomFrom(t);
+              setScrollOffset(0);
+              scrollOffsetRef.current = 0;
+            }}
+            keyboardType="numbers-and-punctuation"
+          />
+          <Text style={[styles.dateSep, { color: colors.mutedForeground }]}>→</Text>
+          <TextInput
+            style={[
+              styles.dateInput,
+              {
+                color: colors.foreground,
+                backgroundColor: colors.secondary,
+                borderColor: colors.border,
+              },
+            ]}
+            placeholder="To YYYY-MM-DD"
+            placeholderTextColor={colors.mutedForeground}
+            value={customTo}
+            onChangeText={(t) => {
+              setCustomTo(t);
+              setScrollOffset(0);
+              scrollOffsetRef.current = 0;
+            }}
+            keyboardType="numbers-and-punctuation"
+          />
+        </View>
+      )}
+
+      {/* ── No data in range ── */}
+      {rangeFilteredData.length === 0 ? (
+        <View style={[styles.empty, { height }]}>
+          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
+            No data in this range
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.chartWrapper}>
+          {/* Chart canvas */}
+          <View
+            style={styles.container}
+            onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+            {...portraitPan.panHandlers}
+          >
+            {containerWidth > 0 && (
+              <ChartSvg
+                data={visibleData}
+                contributions={contributions}
+                chartW={containerWidth}
+                chartH={height}
+                pad={PORT_PAD}
+                activeDate={activeDate}
+                colors={colors}
+                fontSize={10}
+              />
+            )}
+          </View>
+
+          {/* Scroll progress bar (visible when zoomed in) */}
+          {showZoomUI && (
+            <View style={[styles.scrollTrack, { backgroundColor: colors.secondary }]}>
+              <View
+                style={[
+                  styles.scrollThumb,
+                  {
+                    backgroundColor: colors.primary,
+                    left: `${scrollFraction * (1 - thumbFraction) * 100}%` as `${number}%`,
+                    width: `${thumbFraction * 100}%` as `${number}%`,
+                  },
+                ]}
+              />
+            </View>
+          )}
+
+          {/* Overlay row: zoom badge + reset + expand button */}
+          <View style={styles.overlayRow}>
+            {showZoomUI ? (
+              <TouchableOpacity onPress={resetView} style={styles.zoomResetRow} activeOpacity={0.7}>
+                <Text style={[styles.zoomBadge, { color: colors.mutedForeground }]}>
+                  {zoomScale.toFixed(1)}× ·{" "}
+                  {scrollFraction > 0.02 && scrollFraction < 0.98 ? "drag to scroll · " : ""}
+                  tap to reset
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+            <Pressable
+              style={[styles.expandBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+              hitSlop={12}
+              onPress={() => { setFullscreen(true); setActiveDate(null); }}
+            >
+              <Text style={[styles.expandIcon, { color: colors.mutedForeground }]}>⛶</Text>
+            </Pressable>
+          </View>
+
+          {/* Contribution legend */}
+          {hasContribs && (
+            <View style={styles.legend}>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendSwatch, { backgroundColor: colors.positive, opacity: 0.75 }]} />
+                <Text style={[styles.legendLabel, { color: colors.mutedForeground }]}>Investment return</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendSwatch, { backgroundColor: colors.accent, opacity: 0.75 }]} />
+                <Text style={[styles.legendLabel, { color: colors.mutedForeground }]}>Employer</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendSwatch, { backgroundColor: colors.primary, opacity: 0.6 }]} />
+                <Text style={[styles.legendLabel, { color: colors.mutedForeground }]}>From you</Text>
+              </View>
+            </View>
           )}
         </View>
+      )}
 
-        <View style={styles.overlayRow}>
-          {showZoomLabel ? (
-            <Text style={[styles.zoomBadge, { color: colors.mutedForeground }]}>
-              {zoomScale.toFixed(1)}× · double-tap to reset
-            </Text>
-          ) : null}
-          <Pressable
-            style={[styles.expandBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-            hitSlop={12}
-            onPress={() => { setFullscreen(true); setActiveDate(null); }}
-          >
-            <Text style={[styles.expandIcon, { color: colors.mutedForeground }]}>⛶</Text>
-          </Pressable>
-        </View>
-
-        {/* Contribution legend */}
-        {hasContribs && (
-          <View style={styles.legend}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendSwatch, { backgroundColor: colors.positive, opacity: 0.75 }]} />
-              <Text style={[styles.legendLabel, { color: colors.mutedForeground }]}>Investment return</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendSwatch, { backgroundColor: colors.accent, opacity: 0.75 }]} />
-              <Text style={[styles.legendLabel, { color: colors.mutedForeground }]}>Employer</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendSwatch, { backgroundColor: colors.primary, opacity: 0.6 }]} />
-              <Text style={[styles.legendLabel, { color: colors.mutedForeground }]}>From you</Text>
-            </View>
-          </View>
-        )}
-      </View>
-
+      {/* ── Fullscreen / landscape modal ── */}
       <Modal
         visible={modalVisible}
         animationType="fade"
@@ -770,12 +823,7 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
       >
         <View
           style={[styles.fullscreen, { backgroundColor: colors.background }]}
-          onLayout={(e) =>
-            setModalSize({
-              w: e.nativeEvent.layout.width,
-              h: e.nativeEvent.layout.height,
-            })
-          }
+          onLayout={(e) => setModalSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
           {...modalPan.panHandlers}
         >
           {modalSize.w > 0 && (
@@ -803,9 +851,7 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
 
           {!activeDate && (
             <Text style={[styles.hint, { color: colors.mutedForeground }]}>
-              {autoLandscape
-                ? "Touch & drag to scan · Rotate to return"
-                : "Touch & drag to scan"}
+              {autoLandscape ? "Touch & drag to scan · Rotate to return" : "Touch & drag to scan"}
             </Text>
           )}
         </View>
@@ -814,12 +860,65 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
+  rangeScroll: {
+    marginBottom: 10,
+  },
+  rangeRow: {
+    flexDirection: "row",
+    gap: 6,
+    paddingHorizontal: 2,
+    paddingVertical: 2,
+  },
+  rangeChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  rangeChipText: {
+    fontSize: 12,
+    letterSpacing: 0.1,
+  },
+  customDateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 10,
+  },
+  dateInput: {
+    flex: 1,
+    height: 36,
+    paddingHorizontal: 10,
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    borderWidth: 1,
+    borderRadius: 8,
+  },
+  dateSep: {
+    fontSize: 14,
+    fontFamily: "Inter_400Regular",
+  },
   chartWrapper: {
     alignSelf: "stretch",
   },
   container: {
     alignSelf: "stretch",
+  },
+  scrollTrack: {
+    height: 3,
+    borderRadius: 2,
+    marginHorizontal: 4,
+    marginTop: 4,
+    overflow: "hidden",
+    position: "relative",
+  },
+  scrollThumb: {
+    position: "absolute",
+    top: 0,
+    height: 3,
+    borderRadius: 2,
   },
   overlayRow: {
     flexDirection: "row",
@@ -829,10 +928,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     minHeight: 28,
   },
-  zoomBadge: {
+  zoomResetRow: {
     flex: 1,
+  },
+  zoomBadge: {
     fontSize: 11,
     opacity: 0.7,
+    fontFamily: "Inter_400Regular",
   },
   expandBtn: {
     width: 28,
@@ -874,6 +976,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 14,
+    fontFamily: "Inter_400Regular",
   },
   fullscreen: {
     flex: 1,
@@ -899,5 +1002,6 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     fontSize: 12,
     opacity: 0.5,
+    fontFamily: "Inter_400Regular",
   },
 });
