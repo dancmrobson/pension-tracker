@@ -6,7 +6,7 @@ const workspaceRoot = path.resolve(projectRoot, "../..");
 
 const config = getDefaultConfig(projectRoot);
 
-// Allow Metro to resolve symlinked pnpm packages outside project root
+// Watch the whole monorepo so pnpm-store symlinks resolve
 config.watchFolders = [workspaceRoot];
 
 config.resolver.nodeModulesPaths = [
@@ -14,7 +14,8 @@ config.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, "node_modules"),
 ];
 
-// Enable symlink resolution (Metro ≥ 0.76 / Expo SDK 50+)
+// Follow pnpm symlinks and honour package.json "exports"
 config.resolver.unstable_enableSymlinks = true;
+config.resolver.unstable_enablePackageExports = true;
 
 module.exports = config;

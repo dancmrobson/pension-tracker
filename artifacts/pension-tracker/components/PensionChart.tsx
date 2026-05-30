@@ -12,6 +12,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import Svg, {
   Circle,
   Defs,
@@ -74,6 +75,23 @@ function formatAxisValue(v: number): string {
 
 function formatCurrency(v: number): string {
   return `£${v.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function toIso(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function toDisplay(iso: string): string {
+  if (!iso || !iso.match(/^\d{4}-\d{2}-\d{2}$/)) return "";
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+function fromDateObj(date: Date): string {
+  return toIso(date);
 }
 
 function applyRangeFilter(
@@ -405,6 +423,8 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
   const [rangePreset, setRangePreset] = useState<RangePreset>("All");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
+  const [showFromPicker, setShowFromPicker] = useState(false);
+  const [showToPicker, setShowToPicker] = useState(false);
 
   const modalVisible = autoLandscape || fullscreen;
 
@@ -685,44 +705,127 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
       {/* ── Custom date range inputs ── */}
       {rangePreset === "Custom" && (
         <View style={styles.customDateRow}>
-          <TextInput
+          {/* From date */}
+          <TouchableOpacity
             style={[
-              styles.dateInput,
-              {
-                color: colors.foreground,
-                backgroundColor: colors.secondary,
-                borderColor: colors.border,
-              },
+              styles.dateBtn,
+              { backgroundColor: colors.secondary, borderColor: customFrom ? colors.primary : colors.border },
             ]}
-            placeholder="From YYYY-MM-DD"
-            placeholderTextColor={colors.mutedForeground}
-            value={customFrom}
-            onChangeText={(t) => {
-              setCustomFrom(t);
+            onPress={() => { setShowFromPicker(true); setShowToPicker(false); }}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="calendar-outline" size={14} color={customFrom ? colors.primary : colors.mutedForeground} />
+            <Text style={[styles.dateBtnText, { color: customFrom ? colors.foreground : colors.mutedForeground }]}>
+              {customFrom ? toDisplay(customFrom) : "From dd/mm/yyyy"}
+            </Text>
+          </TouchableOpacity>
+
+          <Text style={[styles.dateSep, { color: colors.mutedForeground }]}>→</Text>
+
+          {/* To date */}
+          <TouchableOpacity
+            style={[
+              styles.dateBtn,
+              { backgroundColor: colors.secondary, borderColor: customTo ? colors.primary : colors.border },
+            ]}
+            onPress={() => { setShowToPicker(true); setShowFromPicker(false); }}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="calendar-outline" size={14} color={customTo ? colors.primary : colors.mutedForeground} />
+            <Text style={[styles.dateBtnText, { color: customTo ? colors.foreground : colors.mutedForeground }]}>
+              {customTo ? toDisplay(customTo) : "To dd/mm/yyyy"}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Clear button */}
+          {(customFrom || customTo) && (
+            <TouchableOpacity
+              onPress={() => {
+                setCustomFrom("");
+                setCustomTo("");
+                setScrollOffset(0);
+                scrollOffsetRef.current = 0;
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close-circle" size={18} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* ── Native date pickers ── */}
+      {rangePreset === "Custom" && showFromPicker && Platform.OS !== "web" && (
+        <DateTimePicker
+          value={customFrom ? new Date(customFrom + "T00:00:00") : new Date()}
+          mode="date"
+          display={Platform.OS === "ios" ? "inline" : "default"}
+          maximumDate={customTo ? new Date(customTo + "T00:00:00") : new Date()}
+          onChange={(_, date) => {
+            setShowFromPicker(Platform.OS === "ios");
+            if (date) {
+              setCustomFrom(fromDateObj(date));
               setScrollOffset(0);
               scrollOffsetRef.current = 0;
+            }
+          }}
+        />
+      )}
+      {rangePreset === "Custom" && showToPicker && Platform.OS !== "web" && (
+        <DateTimePicker
+          value={customTo ? new Date(customTo + "T00:00:00") : new Date()}
+          mode="date"
+          display={Platform.OS === "ios" ? "inline" : "default"}
+          minimumDate={customFrom ? new Date(customFrom + "T00:00:00") : undefined}
+          maximumDate={new Date()}
+          onChange={(_, date) => {
+            setShowToPicker(Platform.OS === "ios");
+            if (date) {
+              setCustomTo(fromDateObj(date));
+              setScrollOffset(0);
+              scrollOffsetRef.current = 0;
+            }
+          }}
+        />
+      )}
+
+      {/* Web fallback: plain text inputs */}
+      {rangePreset === "Custom" && Platform.OS === "web" && (showFromPicker || showToPicker) && (
+        <View style={styles.customDateRow}>
+          <TextInput
+            style={[styles.dateInputWeb, { color: colors.foreground, backgroundColor: colors.secondary, borderColor: colors.border }]}
+            placeholder="dd/mm/yyyy"
+            placeholderTextColor={colors.mutedForeground}
+            value={toDisplay(customFrom)}
+            onChangeText={(t) => {
+              const clean = t.replace(/\D/g, "");
+              if (clean.length === 8) {
+                const iso = `${clean.slice(4)}-${clean.slice(2, 4)}-${clean.slice(0, 2)}`;
+                setCustomFrom(iso);
+                setScrollOffset(0);
+                scrollOffsetRef.current = 0;
+              }
             }}
             keyboardType="numbers-and-punctuation"
+            maxLength={10}
           />
           <Text style={[styles.dateSep, { color: colors.mutedForeground }]}>→</Text>
           <TextInput
-            style={[
-              styles.dateInput,
-              {
-                color: colors.foreground,
-                backgroundColor: colors.secondary,
-                borderColor: colors.border,
-              },
-            ]}
-            placeholder="To YYYY-MM-DD"
+            style={[styles.dateInputWeb, { color: colors.foreground, backgroundColor: colors.secondary, borderColor: colors.border }]}
+            placeholder="dd/mm/yyyy"
             placeholderTextColor={colors.mutedForeground}
-            value={customTo}
+            value={toDisplay(customTo)}
             onChangeText={(t) => {
-              setCustomTo(t);
-              setScrollOffset(0);
-              scrollOffsetRef.current = 0;
+              const clean = t.replace(/\D/g, "");
+              if (clean.length === 8) {
+                const iso = `${clean.slice(4)}-${clean.slice(2, 4)}-${clean.slice(0, 2)}`;
+                setCustomTo(iso);
+                setScrollOffset(0);
+                scrollOffsetRef.current = 0;
+              }
             }}
             keyboardType="numbers-and-punctuation"
+            maxLength={10}
           />
         </View>
       )}
@@ -887,7 +990,22 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 10,
   },
-  dateInput: {
+  dateBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    height: 36,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderRadius: 8,
+  },
+  dateBtnText: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    flex: 1,
+  },
+  dateInputWeb: {
     flex: 1,
     height: 36,
     paddingHorizontal: 10,

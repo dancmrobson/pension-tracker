@@ -14,6 +14,7 @@
     "typescript": "~5.9.3"
   },
   "dependencies": {
+    "@react-native-community/datetimepicker": "8.4.4",
     "sharp": "^0.34.5",
     "xlsx": "^0.18.5"
   }
