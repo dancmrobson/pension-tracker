@@ -215,7 +215,7 @@ export default function UploadScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       const csvText = await FileSystem.readAsStringAsync(asset.uri, {
-        encoding: FileSystem.EncodingType.UTF8,
+        encoding: "utf8",
       });
 
       csvMutation.mutate({ data: { csv_text: csvText } });

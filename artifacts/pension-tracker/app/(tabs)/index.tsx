@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useScrollToTop } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { PensionChart } from "@/components/PensionChart";
 import type { ContributionPoint } from "@/components/PensionChart";
+import { ThemePicker } from "@/components/ThemePicker";
 import { useColors } from "@/hooks/useColors";
 import { useUserName } from "@/hooks/useUserName";
 import {
@@ -55,6 +56,7 @@ export default function DashboardScreen() {
   const { name } = useUserName();
   const scrollRef = useRef(null);
   useScrollToTop(scrollRef);
+  const [showThemePicker, setShowThemePicker] = useState(false);
 
   const { data: entries, isLoading: entriesLoading, refetch: refetchEntries } = useListPensionEntries();
   const { data: insights, isLoading: insightsLoading, refetch: refetchInsights } = useGetPensionInsights();
@@ -142,14 +144,26 @@ export default function DashboardScreen() {
       }
       showsVerticalScrollIndicator={false}
     >
-      <Text style={[styles.heading, { color: colors.foreground }]}>
-        {name ? `Hello, ${name}` : "Pension Tracker"}
-      </Text>
-      {name ? (
-        <Text style={[styles.subheading, { color: colors.mutedForeground }]}>
-          Pension Tracker
-        </Text>
-      ) : null}
+      <View style={styles.headingRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.heading, { color: colors.foreground }]}>
+            {name ? `Hello, ${name}` : "Pension Tracker"}
+          </Text>
+          {name ? (
+            <Text style={[styles.subheading, { color: colors.mutedForeground }]}>
+              Pension Tracker
+            </Text>
+          ) : null}
+        </View>
+        <TouchableOpacity
+          onPress={() => setShowThemePicker(true)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={[styles.gearBtn, { backgroundColor: colors.secondary }]}
+        >
+          <Ionicons name="color-palette-outline" size={20} color={colors.primary} />
+        </TouchableOpacity>
+      </View>
+      <ThemePicker visible={showThemePicker} onClose={() => setShowThemePicker(false)} />
 
       {!hasData ? (
         <View
@@ -431,6 +445,22 @@ const styles = StyleSheet.create({
   },
   container: {
     paddingHorizontal: 16,
+  },
+  headingRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: 0,
+  },
+  gearBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+    marginLeft: 8,
+    flexShrink: 0,
   },
   heading: {
     fontSize: 28,

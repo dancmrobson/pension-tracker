@@ -108,7 +108,7 @@ export function EntryCard({
             <View
               style={[
                 styles.badge,
-                { backgroundColor: isPositive ? "#DCFCE7" : "#FEE2E2" },
+                { backgroundColor: isPositive ? colors.positiveBg : colors.negativeBg },
               ]}
             >
               <Ionicons
