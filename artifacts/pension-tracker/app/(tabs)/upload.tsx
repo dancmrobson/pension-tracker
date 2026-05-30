@@ -2,8 +2,9 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
+import { useScrollToTop } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -37,6 +38,8 @@ export default function UploadScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { name, saveName } = useUserName();
+  const scrollRef = useRef(null);
+  useScrollToTop(scrollRef);
 
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
@@ -162,6 +165,7 @@ export default function UploadScreen() {
 
   return (
     <ScrollView
+      ref={scrollRef}
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={[
         styles.container,

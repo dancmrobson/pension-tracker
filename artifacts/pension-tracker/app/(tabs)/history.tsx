@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useScrollToTop } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import React from "react";
+import React, { useRef } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -61,6 +62,9 @@ export default function HistoryScreen() {
     );
   }, [entries]);
 
+  const scrollRef = useRef(null);
+  useScrollToTop(scrollRef);
+
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   if (isLoading) {
@@ -78,6 +82,7 @@ export default function HistoryScreen() {
 
   return (
     <FlatList
+      ref={scrollRef}
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={[
         styles.container,

@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useScrollToTop } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import React from "react";
+import React, { useRef } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -46,6 +47,8 @@ export default function DashboardScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { name } = useUserName();
+  const scrollRef = useRef(null);
+  useScrollToTop(scrollRef);
 
   const { data: entries, isLoading: entriesLoading, refetch: refetchEntries } = useListPensionEntries();
   const { data: insights, isLoading: insightsLoading, refetch: refetchInsights } = useGetPensionInsights();
@@ -91,6 +94,7 @@ export default function DashboardScreen() {
 
   return (
     <ScrollView
+      ref={scrollRef}
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={[
         styles.container,
