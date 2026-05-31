@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Modal,
   PanResponder,
@@ -24,6 +24,7 @@ import Svg, {
   Text as SvgText,
 } from "react-native-svg";
 import { Ionicons } from "@expo/vector-icons";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { useColors } from "@/hooks/useColors";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -504,6 +505,18 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
   const [showToPicker, setShowToPicker] = useState(false);
 
   const modalVisible = autoLandscape || fullscreen;
+
+  // Lock to landscape when fullscreen button opens the modal; unlock on close.
+  // autoLandscape (physical rotation) still works independently.
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    if (fullscreen) {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+      return () => {
+        ScreenOrientation.unlockAsync();
+      };
+    }
+  }, [fullscreen]);
 
   // ── Gesture refs (stable across renders, safe for PanResponder closures) ──
   const portraitPtsRef = useRef<ChartPoint[]>([]);
