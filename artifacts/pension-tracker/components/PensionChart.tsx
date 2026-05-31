@@ -507,8 +507,7 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
   const modalVisible = autoLandscape || fullscreen;
 
   // Lock to landscape when fullscreen button opens the modal; unlock on close.
-  // Errors are suppressed — Expo Go may reject lockAsync in some configurations,
-  // and the Modal's supportedOrientations prop acts as a native iOS fallback.
+  // Errors are suppressed — Expo Go may reject lockAsync in some configurations.
   useEffect(() => {
     if (Platform.OS === "web") return;
     if (fullscreen) {
@@ -518,6 +517,25 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
       };
     }
   }, [fullscreen]);
+
+  // "Rotate to return": once the fullscreen modal has been landscape (lockAsync
+  // succeeded or user rotated manually), rotating back to portrait auto-closes.
+  // If lockAsync failed (device stayed portrait), wasLandscape stays false and
+  // the user dismisses via the ✕ button instead.
+  const wasLandscapeWhileFullscreen = useRef(false);
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    if (fullscreen && autoLandscape) {
+      wasLandscapeWhileFullscreen.current = true;
+    } else if (fullscreen && !autoLandscape && wasLandscapeWhileFullscreen.current) {
+      wasLandscapeWhileFullscreen.current = false;
+      setFullscreen(false);
+      setActiveDate(null);
+    }
+    if (!fullscreen) {
+      wasLandscapeWhileFullscreen.current = false;
+    }
+  }, [fullscreen, autoLandscape]);
 
   // ── Gesture refs (stable across renders, safe for PanResponder closures) ──
   const portraitPtsRef = useRef<ChartPoint[]>([]);
@@ -961,7 +979,6 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
         transparent={false}
         statusBarTranslucent
         hardwareAccelerated
-        supportedOrientations={["landscape", "landscape-left", "landscape-right"]}
         onRequestClose={() => setFullscreen(false)}
       >
         <View
