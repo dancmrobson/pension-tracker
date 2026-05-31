@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import {
   Animated,
   Modal,
@@ -62,14 +62,28 @@ export function ThemePicker({ visible, onClose }: Props) {
     return () => animY.removeListener(id);
   }, [animY]);
 
-  // onShow is called once the Modal is actually painted on screen — safer than
-  // useEffect([visible]) which fires before the Modal is visible, causing the
-  // spring to complete before the sheet appears on re-opens.
-  const onShow = () => {
+  // Guard prevents double-fire when both onShow and the setTimeout fallback
+  // trigger on the same open (native fires onShow; web relies on setTimeout).
+  const animatingRef = useRef(false);
+
+  const startOpenAnimation = useCallback(() => {
+    if (animatingRef.current) return;
+    animatingRef.current = true;
     animY.stopAnimation();
     animY.setValue(700);
-    Animated.spring(animY, { toValue: SNAP_C, ...SPRING }).start();
-  };
+    Animated.spring(animY, { toValue: SNAP_C, ...SPRING }).start(() => {
+      animatingRef.current = false;
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fallback: fires 50 ms after visible→true (covers Expo Web where onShow is unreliable)
+  useEffect(() => {
+    if (visible) {
+      animatingRef.current = false; // reset guard each open
+      const t = setTimeout(startOpenAnimation, 50);
+      return () => clearTimeout(t);
+    }
+  }, [visible, startOpenAnimation]);
 
   // ── Gesture actions (only access refs → safe for PanResponder closures) ──
   const snapTo = (toValue: number) => {
@@ -195,9 +209,10 @@ export function ThemePicker({ visible, onClose }: Props) {
       transparent
       animationType="none"
       onRequestClose={dismiss}
-      onShow={onShow}
+      onShow={startOpenAnimation}
     >
-      {/* Dimmed backdrop — tap to dismiss */}
+      {/* Dimmed backdrop — absoluteFillObject so it covers the full screen
+          even when the sheet slides down and vacates its layout space */}
       <Pressable style={styles.overlay} onPress={dismiss} />
 
       <Animated.View
@@ -311,10 +326,18 @@ export function ThemePicker({ visible, onClose }: Props) {
 
 const styles = StyleSheet.create({
   overlay: {
-    flex: 1,
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: "rgba(0,0,0,0.42)",
   },
   sheet: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     overflow: "hidden",
