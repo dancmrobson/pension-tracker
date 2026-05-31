@@ -507,13 +507,14 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
   const modalVisible = autoLandscape || fullscreen;
 
   // Lock to landscape when fullscreen button opens the modal; unlock on close.
-  // autoLandscape (physical rotation) still works independently.
+  // Errors are suppressed — Expo Go may reject lockAsync in some configurations,
+  // and the Modal's supportedOrientations prop acts as a native iOS fallback.
   useEffect(() => {
     if (Platform.OS === "web") return;
     if (fullscreen) {
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
       return () => {
-        ScreenOrientation.unlockAsync();
+        ScreenOrientation.unlockAsync().catch(() => {});
       };
     }
   }, [fullscreen]);
@@ -960,6 +961,7 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
         transparent={false}
         statusBarTranslucent
         hardwareAccelerated
+        supportedOrientations={["landscape", "landscape-left", "landscape-right"]}
         onRequestClose={() => setFullscreen(false)}
       >
         <View
