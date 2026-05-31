@@ -212,7 +212,6 @@ export function ThemePicker({ visible, onClose }: Props) {
       transparent
       animationType="none"
       onRequestClose={dismiss}
-      onShow={startOpenAnimation}
     >
       {/* Dimmed backdrop — absoluteFillObject so it covers the full screen
           even when the sheet slides down and vacates its layout space */}

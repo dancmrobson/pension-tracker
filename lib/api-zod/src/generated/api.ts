@@ -100,7 +100,8 @@ export const ListContributionsResponse = zod.array(ListContributionsResponseItem
  * @summary Parse and upsert a contribution history CSV
  */
 export const UploadContributionsCsvBody = zod.object({
-  "csv_text": zod.string().describe('Raw CSV text content')
+  "csv_text": zod.string().optional().describe('Raw CSV text content (mutually exclusive with xlsx_base64)'),
+  "xlsx_base64": zod.string().optional().describe('Base64-encoded xlsx\/xls file content (server parses it)')
 })
 
 export const UploadContributionsCsvResponse = zod.object({

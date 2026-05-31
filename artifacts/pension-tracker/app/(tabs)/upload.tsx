@@ -4,7 +4,6 @@ import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
-import * as XLSX from "xlsx";
 import { useFocusEffect, useScrollToTop } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import React, { useRef, useState } from "react";
@@ -226,28 +225,19 @@ export default function UploadScreen() {
       setCsvUploading(true);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      let csvText: string;
-
       if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
-        // Read as base64, parse with SheetJS, convert first sheet → CSV string
-        const b64 = await FileSystem.readAsStringAsync(asset.uri, {
-          encoding: "base64",
+        // Send raw base64 to the server — SheetJS is unreliable in React Native
+        // due to missing browser/Node globals. The server parses it instead.
+        const xlsx_base64 = await FileSystem.readAsStringAsync(asset.uri, {
+          encoding: "base64" as any,
         });
-        const workbook = XLSX.read(b64, { type: "base64" });
-        const sheetName = workbook.SheetNames[0];
-        if (!sheetName) {
-          Alert.alert("Empty File", "The Excel file appears to have no sheets.");
-          setCsvUploading(false);
-          return;
-        }
-        csvText = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
+        csvMutation.mutate({ data: { xlsx_base64 } });
       } else {
-        csvText = await FileSystem.readAsStringAsync(asset.uri, {
-          encoding: "utf8",
+        const csv_text = await FileSystem.readAsStringAsync(asset.uri, {
+          encoding: "utf8" as any,
         });
+        csvMutation.mutate({ data: { csv_text } });
       }
-
-      csvMutation.mutate({ data: { csv_text: csvText } });
     } catch {
       Alert.alert("Error", "Could not read the file. Please try again.");
       setCsvUploading(false);

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { asc, eq, lte, sql } from "drizzle-orm";
+import * as XLSX from "xlsx";
 import { db, pensionEntriesTable, contributionEntriesTable } from "@workspace/db";
 import { openai } from "@workspace/integrations-openai-ai-server";
 
@@ -286,13 +287,27 @@ pensionRouter.get("/pension/contributions", async (req, res) => {
 
 pensionRouter.post("/pension/contributions/upload", async (req, res) => {
   try {
-    const { csv_text } = req.body as { csv_text?: string };
-    if (!csv_text || typeof csv_text !== "string") {
-      res.status(400).json({ error: "csv_text is required" });
+    const { csv_text, xlsx_base64 } = req.body as { csv_text?: string; xlsx_base64?: string };
+
+    let resolvedCsv: string;
+
+    if (xlsx_base64 && typeof xlsx_base64 === "string") {
+      // Parse xlsx on the server where SheetJS works reliably
+      const workbook = XLSX.read(xlsx_base64, { type: "base64" });
+      const sheetName = workbook.SheetNames[0];
+      if (!sheetName) {
+        res.status(400).json({ error: "The Excel file appears to have no sheets." });
+        return;
+      }
+      resolvedCsv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
+    } else if (csv_text && typeof csv_text === "string") {
+      resolvedCsv = csv_text;
+    } else {
+      res.status(400).json({ error: "Either csv_text or xlsx_base64 is required" });
       return;
     }
 
-    const lines = csv_text
+    const lines = resolvedCsv
       .split(/\r?\n/)
       .map((l) => l.trim())
       .filter(Boolean);

@@ -295,9 +295,11 @@ components:
       properties:
         csv_text:
           type: string
-          description: Raw CSV text content
-      required:
-        - csv_text
+          description: Raw CSV text content (mutually exclusive with xlsx_base64)
+        xlsx_base64:
+          type: string
+          description: Base64-encoded xlsx/xls file content (server parses it)
+      required: []
 
     UploadContributionsCsvResponse:
       type: object

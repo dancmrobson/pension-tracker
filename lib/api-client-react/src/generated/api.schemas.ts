@@ -74,8 +74,10 @@ export interface ContributionEntry {
 }
 
 export interface UploadContributionsCsvBody {
-  /** Raw CSV text content */
-  csv_text: string;
+  /** Raw CSV text content (mutually exclusive with xlsx_base64) */
+  csv_text?: string;
+  /** Base64-encoded xlsx/xls file content (server parses it) */
+  xlsx_base64?: string;
 }
 
 export interface UploadContributionsCsvResponse {
