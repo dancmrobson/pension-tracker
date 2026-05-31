@@ -100,7 +100,10 @@ export function ThemePicker({ visible, onClose }: Props) {
 
   const onGrant = () => {
     animY.stopAnimation();
-    gestureStartY.current = trackedY.current;
+    // Clamp to the valid snap range so that grabbing mid-animation
+    // (when trackedY may be anywhere between 700 and SNAP_C) doesn't
+    // cause onRelease to calculate a wildly wrong position and dismiss.
+    gestureStartY.current = Math.min(SNAP_C, Math.max(SNAP_E, trackedY.current));
   };
 
   const onMove = (_: unknown, { dy }: { dy: number }) => {
