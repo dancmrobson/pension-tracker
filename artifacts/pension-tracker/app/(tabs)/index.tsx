@@ -450,7 +450,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
-    marginBottom: 0,
+    marginBottom: 12,
   },
   gearBtn: {
     width: 38,
