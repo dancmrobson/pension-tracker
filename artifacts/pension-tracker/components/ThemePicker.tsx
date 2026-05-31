@@ -62,13 +62,14 @@ export function ThemePicker({ visible, onClose }: Props) {
     return () => animY.removeListener(id);
   }, [animY]);
 
-  // Animate in to collapsed snap when visible changes to true
-  useEffect(() => {
-    if (visible) {
-      animY.setValue(700);
-      Animated.spring(animY, { toValue: SNAP_C, ...SPRING }).start();
-    }
-  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+  // onShow is called once the Modal is actually painted on screen — safer than
+  // useEffect([visible]) which fires before the Modal is visible, causing the
+  // spring to complete before the sheet appears on re-opens.
+  const onShow = () => {
+    animY.stopAnimation();
+    animY.setValue(700);
+    Animated.spring(animY, { toValue: SNAP_C, ...SPRING }).start();
+  };
 
   // ── Gesture actions (only access refs → safe for PanResponder closures) ──
   const snapTo = (toValue: number) => {
@@ -194,6 +195,7 @@ export function ThemePicker({ visible, onClose }: Props) {
       transparent
       animationType="none"
       onRequestClose={dismiss}
+      onShow={onShow}
     >
       {/* Dimmed backdrop — tap to dismiss */}
       <Pressable style={styles.overlay} onPress={dismiss} />
