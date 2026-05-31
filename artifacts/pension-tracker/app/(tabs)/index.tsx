@@ -108,7 +108,7 @@ export default function DashboardScreen() {
   }, [contributions, chartData]);
 
   const topPad =
-    Platform.OS === "web" ? 67 : insets.top;
+    Platform.OS === "web" ? 16 : insets.top;
 
   if (entriesLoading) {
     return (
@@ -133,7 +133,7 @@ export default function DashboardScreen() {
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={[
         styles.container,
-        { paddingTop: topPad + 4 },
+        { paddingTop: topPad },
       ]}
       refreshControl={
         <RefreshControl
