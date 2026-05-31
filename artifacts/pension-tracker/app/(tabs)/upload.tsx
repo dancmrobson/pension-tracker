@@ -226,11 +226,24 @@ export default function UploadScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
-        // Send raw base64 to the server — SheetJS is unreliable in React Native
-        // due to missing browser/Node globals. The server parses it instead.
-        const xlsx_base64 = await FileSystem.readAsStringAsync(asset.uri, {
-          encoding: "base64" as any,
-        });
+        // expo-file-system v19 deprecated readAsStringAsync; use fetch+arrayBuffer
+        // which works for file:// URIs in RN and avoids the deprecated bridge.
+        let xlsx_base64: string;
+        try {
+          const resp = await fetch(asset.uri);
+          const buf = await resp.arrayBuffer();
+          const bytes = new Uint8Array(buf);
+          let binary = "";
+          for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          xlsx_base64 = btoa(binary);
+        } catch {
+          // Fallback: legacy FileSystem API (still works on most setups)
+          xlsx_base64 = await FileSystem.readAsStringAsync(asset.uri, {
+            encoding: "base64" as any,
+          });
+        }
         csvMutation.mutate({ data: { xlsx_base64 } });
       } else {
         const csv_text = await FileSystem.readAsStringAsync(asset.uri, {
@@ -238,8 +251,12 @@ export default function UploadScreen() {
         });
         csvMutation.mutate({ data: { csv_text } });
       }
-    } catch {
-      Alert.alert("Error", "Could not read the file. Please try again.");
+    } catch (e) {
+      console.error("[csv/xlsx upload] failed:", e);
+      Alert.alert(
+        "Error",
+        `Could not read the file: ${e instanceof Error ? e.message : String(e)}`
+      );
       setCsvUploading(false);
     }
   };
