@@ -108,7 +108,7 @@ export default function DashboardScreen() {
   }, [contributions, chartData]);
 
   const topPad =
-    Platform.OS === "web" ? 16 : insets.top;
+    Platform.OS === "web" ? 36 : insets.top;
 
   if (entriesLoading) {
     return (
