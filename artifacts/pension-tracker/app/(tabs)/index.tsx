@@ -114,14 +114,6 @@ export default function DashboardScreen() {
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom + 90;
   const hPad = isLandscape ? 20 : 16;
 
-  if (entriesLoading) {
-    return (
-      <View style={[styles.center, { backgroundColor: colors.background, paddingTop: topPad }]}>
-        <ActivityIndicator color={colors.primary} size="large" />
-      </View>
-    );
-  }
-
   const hasData = sortedEntries.length > 0;
   const latestPotValue = latestEntry ? parseFloat(latestEntry.pot_value) : 0;
   const investmentReturn = latestCumulative ? latestPotValue - latestCumulative.total : null;
@@ -318,7 +310,11 @@ export default function DashboardScreen() {
 
       <ThemePicker visible={showThemePicker} onClose={() => setShowThemePicker(false)} />
 
-      {!hasData ? (
+      {entriesLoading ? (
+        <View style={styles.loadingInline}>
+          <ActivityIndicator color={colors.primary} size="large" />
+        </View>
+      ) : !hasData ? (
         <View
           style={[
             styles.emptyCard,
@@ -579,6 +575,12 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     lineHeight: 20,
     flex: 1,
+  },
+  loadingInline: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
   },
   emptyCard: {
     borderWidth: 1,
