@@ -975,10 +975,9 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
       {/* ── Fullscreen / landscape modal ── */}
       <Modal
         visible={modalVisible}
-        animationType="fade"
+        animationType="none"
         transparent={false}
-        statusBarTranslucent
-        hardwareAccelerated
+        statusBarTranslucent={false}
         onRequestClose={() => setFullscreen(false)}
       >
         <View
