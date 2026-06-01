@@ -506,12 +506,21 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
 
   const modalVisible = fullscreen;
 
+  // Capture current landscape state in a ref so the lock effect can read it
+  // without adding autoLandscape as a reactive dep (which would re-run cleanup
+  // on every rotation and cause flicker / crashes on New Architecture).
+  const autoLandscapeRef = useRef(autoLandscape);
+  autoLandscapeRef.current = autoLandscape;
+
   // Lock to landscape when fullscreen button opens the modal; unlock on close.
-  // Errors are suppressed — Expo Go may reject lockAsync in some configurations.
+  // Skip lockAsync entirely if the device is already in landscape — calling it
+  // redundantly crashes on New Architecture + TestFlight.
   useEffect(() => {
     if (Platform.OS === "web") return;
     if (fullscreen) {
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+      if (!autoLandscapeRef.current) {
+        ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+      }
       return () => {
         ScreenOrientation.unlockAsync().catch(() => {});
       };

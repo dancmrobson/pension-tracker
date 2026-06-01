@@ -126,6 +126,101 @@ export default function DashboardScreen() {
   const latestPotValue = latestEntry ? parseFloat(latestEntry.pot_value) : 0;
   const investmentReturn = latestCumulative ? latestPotValue - latestCumulative.total : null;
 
+  const statsSection = (
+    <>
+      {latestCumulative && latestCumulative.total > 0 ? (
+        <View style={[styles.statsRow, isLandscape && styles.statsRowLandscape]}>
+          <View
+            style={[
+              styles.statCard,
+              isLandscape && styles.statCardLandscape,
+              { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius },
+            ]}
+          >
+            <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>From You</Text>
+            <Text style={[styles.statValue, { color: colors.primary }]}>
+              {formatCurrency(latestCumulative.employee)}
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.statCard,
+              isLandscape && styles.statCardLandscape,
+              { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius },
+            ]}
+          >
+            <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Employer</Text>
+            <Text style={[styles.statValue, { color: colors.accent }]}>
+              {formatCurrency(latestCumulative.employer)}
+            </Text>
+          </View>
+          {investmentReturn !== null ? (
+            <View
+              style={[
+                styles.statCard,
+                isLandscape && styles.statCardLandscape,
+                { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius },
+              ]}
+            >
+              <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Returns</Text>
+              <Text
+                style={[
+                  styles.statValue,
+                  { color: investmentReturn >= 0 ? colors.positive : colors.negative },
+                ]}
+              >
+                {formatCurrency(investmentReturn)}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {insights?.has_data && !latestCumulative && (
+        <View style={[styles.statsRow, isLandscape && styles.statsRowLandscape]}>
+          <View
+            style={[
+              styles.statCard,
+              isLandscape && styles.statCardLandscape,
+              { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius },
+            ]}
+          >
+            <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Total Growth</Text>
+            <Text
+              style={[
+                styles.statValue,
+                { color: (insights.total_growth_pct ?? 0) >= 0 ? colors.positive : colors.negative },
+              ]}
+            >
+              {insights.total_growth_pct != null
+                ? `${insights.total_growth_pct >= 0 ? "+" : ""}${insights.total_growth_pct.toFixed(1)}%`
+                : "—"}
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.statCard,
+              isLandscape && styles.statCardLandscape,
+              { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius },
+            ]}
+          >
+            <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Annual Return</Text>
+            <Text
+              style={[
+                styles.statValue,
+                { color: (insights.annualized_return_pct ?? 0) >= 0 ? colors.positive : colors.negative },
+              ]}
+            >
+              {insights.annualized_return_pct != null
+                ? `${insights.annualized_return_pct >= 0 ? "+" : ""}${insights.annualized_return_pct.toFixed(1)}%`
+                : "—"}
+            </Text>
+          </View>
+        </View>
+      )}
+    </>
+  );
+
   const heroCard = (
     <View
       style={[
@@ -255,100 +350,18 @@ export default function DashboardScreen() {
         <>
           {isLandscape ? (
             <View style={styles.landscapeRow}>
-              <View style={styles.landscapeLeft}>{heroCard}</View>
+              <View style={styles.landscapeLeft}>
+                {heroCard}
+                {statsSection}
+              </View>
               <View style={styles.landscapeRight}>{chartCard}</View>
             </View>
           ) : (
             <>
               {heroCard}
               {chartCard}
+              {statsSection}
             </>
-          )}
-
-          {latestCumulative && latestCumulative.total > 0 ? (
-            <View style={styles.statsRow}>
-              <View
-                style={[
-                  styles.statCard,
-                  { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius },
-                ]}
-              >
-                <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>From You</Text>
-                <Text style={[styles.statValue, { color: colors.primary }]}>
-                  {formatCurrency(latestCumulative.employee)}
-                </Text>
-              </View>
-              <View
-                style={[
-                  styles.statCard,
-                  { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius },
-                ]}
-              >
-                <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Employer</Text>
-                <Text style={[styles.statValue, { color: colors.accent }]}>
-                  {formatCurrency(latestCumulative.employer)}
-                </Text>
-              </View>
-              {investmentReturn !== null ? (
-                <View
-                  style={[
-                    styles.statCard,
-                    { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius },
-                  ]}
-                >
-                  <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Returns</Text>
-                  <Text
-                    style={[
-                      styles.statValue,
-                      { color: investmentReturn >= 0 ? colors.positive : colors.negative },
-                    ]}
-                  >
-                    {formatCurrency(investmentReturn)}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-          ) : null}
-
-          {insights?.has_data && !latestCumulative && (
-            <View style={styles.statsRow}>
-              <View
-                style={[
-                  styles.statCard,
-                  { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius },
-                ]}
-              >
-                <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Total Growth</Text>
-                <Text
-                  style={[
-                    styles.statValue,
-                    { color: (insights.total_growth_pct ?? 0) >= 0 ? colors.positive : colors.negative },
-                  ]}
-                >
-                  {insights.total_growth_pct != null
-                    ? `${insights.total_growth_pct >= 0 ? "+" : ""}${insights.total_growth_pct.toFixed(1)}%`
-                    : "—"}
-                </Text>
-              </View>
-              <View
-                style={[
-                  styles.statCard,
-                  { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius },
-                ]}
-              >
-                <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Annual Return</Text>
-                <Text
-                  style={[
-                    styles.statValue,
-                    { color: (insights.annualized_return_pct ?? 0) >= 0 ? colors.positive : colors.negative },
-                  ]}
-                >
-                  {insights.annualized_return_pct != null
-                    ? `${insights.annualized_return_pct >= 0 ? "+" : ""}${insights.annualized_return_pct.toFixed(1)}%`
-                    : "—"}
-                </Text>
-              </View>
-            </View>
           )}
 
           {insights?.insights && insights.insights.length > 0 ? (
@@ -507,10 +520,23 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 12,
   },
+  statsRowLandscape: {
+    flexDirection: "column",
+    gap: 6,
+    marginTop: 8,
+    marginBottom: 0,
+  },
   statCard: {
     flex: 1,
     padding: 14,
     borderWidth: 1,
+    alignItems: "center",
+  },
+  statCardLandscape: {
+    flex: 0,
+    padding: 10,
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
   },
   statLabel: {
