@@ -155,6 +155,14 @@ pensionRouter.post("/pension/entries", async (req, res) => {
         totalContributions: total_contributions ? String(total_contributions) : null,
         notes: notes ?? null,
       })
+      .onConflictDoUpdate({
+        target: pensionEntriesTable.entryDate,
+        set: {
+          potValue: sql`EXCLUDED.pot_value`,
+          totalContributions: sql`EXCLUDED.total_contributions`,
+          notes: sql`EXCLUDED.notes`,
+        },
+      })
       .returning();
 
     res.status(201).json(serializeEntry(entry));

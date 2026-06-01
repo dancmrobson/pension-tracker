@@ -110,7 +110,7 @@ export default function DashboardScreen() {
     return { employee: emp, employer: emr, total: emp + emr };
   }, [contributions, chartData]);
 
-  const topPad = Platform.OS === "web" ? 36 : insets.top;
+  const topPad = Platform.OS === "web" ? 36 : isLandscape ? insets.top + 40 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom + 90;
   const hPad = isLandscape ? 20 : 16;
 
@@ -268,6 +268,34 @@ export default function DashboardScreen() {
     </View>
   );
 
+  const headingRow = (
+    <View style={[styles.headingRow, isLandscape && styles.headingRowLandscape]}>
+      <View style={{ flex: 1 }}>
+        <Text
+          style={[
+            styles.heading,
+            isLandscape && styles.headingLandscape,
+            { color: colors.foreground },
+          ]}
+        >
+          {name ? `Hello, ${name}` : "Pension Tracker"}
+        </Text>
+        {name ? (
+          <Text style={[styles.subheading, { color: colors.mutedForeground }]}>
+            Pension Tracker
+          </Text>
+        ) : null}
+      </View>
+      <TouchableOpacity
+        onPress={() => setShowThemePicker(true)}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        style={[styles.gearBtn, { backgroundColor: colors.secondary }]}
+      >
+        <Ionicons name="color-palette-outline" size={20} color={colors.primary} />
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <ScrollView
       ref={scrollRef}
@@ -282,71 +310,52 @@ export default function DashboardScreen() {
       }
       showsVerticalScrollIndicator={false}
     >
-      <View style={styles.headingRow}>
-        <View style={{ flex: 1 }}>
-          <Text
-            style={[
-              styles.heading,
-              isLandscape && styles.headingLandscape,
-              { color: colors.foreground },
-            ]}
-          >
-            {name ? `Hello, ${name}` : "Pension Tracker"}
-          </Text>
-          {name ? (
-            <Text style={[styles.subheading, { color: colors.mutedForeground }]}>
-              Pension Tracker
-            </Text>
-          ) : null}
-        </View>
-        <TouchableOpacity
-          onPress={() => setShowThemePicker(true)}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          style={[styles.gearBtn, { backgroundColor: colors.secondary }]}
-        >
-          <Ionicons name="color-palette-outline" size={20} color={colors.primary} />
-        </TouchableOpacity>
-      </View>
-
       <ThemePicker visible={showThemePicker} onClose={() => setShowThemePicker(false)} />
 
       {entriesLoading ? (
-        <View style={styles.loadingInline}>
-          <ActivityIndicator color={colors.primary} size="large" />
-        </View>
+        <>
+          {headingRow}
+          <View style={styles.loadingInline}>
+            <ActivityIndicator color={colors.primary} size="large" />
+          </View>
+        </>
       ) : !hasData ? (
-        <View
-          style={[
-            styles.emptyCard,
-            {
-              backgroundColor: colors.card,
-              borderColor: colors.border,
-              borderRadius: colors.radius,
-            },
-          ]}
-        >
-          <Ionicons name="wallet-outline" size={48} color={colors.mutedForeground} />
-          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No snapshots yet</Text>
-          <Text style={[styles.emptySubtitle, { color: colors.mutedForeground }]}>
-            Upload a screenshot of your pension to start tracking performance
-          </Text>
-          <TouchableOpacity
+        <>
+          {headingRow}
+          <View
             style={[
-              styles.uploadBtn,
-              { backgroundColor: colors.primary, borderRadius: colors.radius },
+              styles.emptyCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                borderRadius: colors.radius,
+              },
             ]}
-            onPress={() => router.push("/(tabs)/upload")}
           >
-            <Text style={[styles.uploadBtnText, { color: colors.primaryForeground }]}>
-              Upload Screenshot
+            <Ionicons name="wallet-outline" size={48} color={colors.mutedForeground} />
+            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No snapshots yet</Text>
+            <Text style={[styles.emptySubtitle, { color: colors.mutedForeground }]}>
+              Upload a screenshot of your pension to start tracking performance
             </Text>
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity
+              style={[
+                styles.uploadBtn,
+                { backgroundColor: colors.primary, borderRadius: colors.radius },
+              ]}
+              onPress={() => router.push("/(tabs)/upload")}
+            >
+              <Text style={[styles.uploadBtnText, { color: colors.primaryForeground }]}>
+                Upload Screenshot
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </>
       ) : (
         <>
           {isLandscape ? (
             <View style={styles.landscapeRow}>
               <View style={styles.landscapeLeft}>
+                {headingRow}
                 {heroCard}
                 {statsSection}
               </View>
@@ -354,6 +363,7 @@ export default function DashboardScreen() {
             </View>
           ) : (
             <>
+              {headingRow}
               {heroCard}
               {chartCard}
               {statsSection}
@@ -405,6 +415,9 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     justifyContent: "space-between",
     marginBottom: 12,
+  },
+  headingRowLandscape: {
+    marginBottom: 8,
   },
   gearBtn: {
     width: 38,

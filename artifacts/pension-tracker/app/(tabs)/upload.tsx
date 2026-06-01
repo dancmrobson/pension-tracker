@@ -17,6 +17,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
@@ -261,7 +262,9 @@ export default function UploadScreen() {
     }
   };
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+  const topPad = Platform.OS === "web" ? 67 : isLandscape ? insets.top + 40 : insets.top;
 
   const confidenceColor =
     confidence === "high"

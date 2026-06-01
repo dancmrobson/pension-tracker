@@ -4,7 +4,7 @@ import { z } from "zod/v4";
 
 export const pensionEntriesTable = pgTable("pension_entries", {
   id: serial("id").primaryKey(),
-  entryDate: date("entry_date").notNull(),
+  entryDate: date("entry_date").notNull().unique(),
   potValue: numeric("pot_value", { precision: 14, scale: 2 }).notNull(),
   totalContributions: numeric("total_contributions", { precision: 14, scale: 2 }),
   notes: text("notes"),
