@@ -15,8 +15,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.dancmrobson.pensiontracker",
       "icon": {
-        "any": "./assets/images/icon.png",
-        "dark": "./assets/images/icon-dark.png",
+        "any": "./assets/images/icon-dark.png",
+        "dark": "./assets/images/icon.png",
         "tinted": "./assets/images/icon-tinted.png"
       }
     },
