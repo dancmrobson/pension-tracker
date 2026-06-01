@@ -16,11 +16,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.dancmrobson.pensiontracker",
-      "icon": {
-        "any": "./assets/images/icon.png",
-        "dark": "./assets/images/icon-dark.png",
-        "tinted": "./assets/images/icon-tinted.png"
-      }
+      "icon": "./assets/images/icon.png"
     },
     "android": {},
     "web": {
@@ -34,7 +30,8 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-screen-orientation"
     ],
     "experiments": {
       "typedRoutes": true,
