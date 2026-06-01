@@ -504,7 +504,7 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
   const [showFromPicker, setShowFromPicker] = useState(false);
   const [showToPicker, setShowToPicker] = useState(false);
 
-  const modalVisible = autoLandscape || fullscreen;
+  const modalVisible = fullscreen;
 
   // Lock to landscape when fullscreen button opens the modal; unlock on close.
   // Errors are suppressed — Expo Go may reject lockAsync in some configurations.
@@ -998,19 +998,17 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
             />
           )}
 
-          {!autoLandscape && (
-            <Pressable
-              style={[styles.closeBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-              hitSlop={12}
-              onPress={() => { setFullscreen(false); setActiveDate(null); }}
-            >
-              <Text style={[styles.closeIcon, { color: colors.foreground }]}>✕</Text>
-            </Pressable>
-          )}
+          <Pressable
+            style={[styles.closeBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+            hitSlop={12}
+            onPress={() => { setFullscreen(false); setActiveDate(null); }}
+          >
+            <Text style={[styles.closeIcon, { color: colors.foreground }]}>✕</Text>
+          </Pressable>
 
           {!activeDate && (
             <Text style={[styles.hint, { color: colors.mutedForeground }]}>
-              {autoLandscape ? "Touch & drag to scan · Rotate to return" : "Touch & drag to scan"}
+              {"Touch & drag to scan · Rotate to return"}
             </Text>
           )}
         </View>
