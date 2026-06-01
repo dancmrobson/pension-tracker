@@ -11,6 +11,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -58,6 +59,9 @@ export default function DashboardScreen() {
   useScrollToTop(scrollRef);
   const [showThemePicker, setShowThemePicker] = useState(false);
 
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+
   const { data: entries, isLoading: entriesLoading, refetch: refetchEntries } = useListPensionEntries();
   const { data: insights, isLoading: insightsLoading, refetch: refetchInsights } = useGetPensionInsights();
   const { data: contributionsRaw, refetch: refetchContributions } = useListContributions();
@@ -92,7 +96,6 @@ export default function DashboardScreen() {
     }));
   }, [contributionsRaw]);
 
-  // Compute latest cumulative totals for breakdown stat cards
   const latestCumulative = React.useMemo(() => {
     if (!contributions || chartData.length === 0) return null;
     const latestDate = chartData[chartData.length - 1].date;
@@ -107,17 +110,13 @@ export default function DashboardScreen() {
     return { employee: emp, employer: emr, total: emp + emr };
   }, [contributions, chartData]);
 
-  const topPad =
-    Platform.OS === "web" ? 36 : insets.top;
+  const topPad = Platform.OS === "web" ? 36 : insets.top;
+  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom + 90;
+  const hPad = isLandscape ? 20 : 16;
 
   if (entriesLoading) {
     return (
-      <View
-        style={[
-          styles.center,
-          { backgroundColor: colors.background, paddingTop: topPad },
-        ]}
-      >
+      <View style={[styles.center, { backgroundColor: colors.background, paddingTop: topPad }]}>
         <ActivityIndicator color={colors.primary} size="large" />
       </View>
     );
@@ -127,14 +126,66 @@ export default function DashboardScreen() {
   const latestPotValue = latestEntry ? parseFloat(latestEntry.pot_value) : 0;
   const investmentReturn = latestCumulative ? latestPotValue - latestCumulative.total : null;
 
+  const heroCard = (
+    <View
+      style={[
+        styles.heroCard,
+        isLandscape && styles.heroCardLandscape,
+        { backgroundColor: colors.primary, borderRadius: colors.radius },
+      ]}
+    >
+      <Text style={[styles.heroLabel, isLandscape && styles.heroLabelLandscape]}>
+        Current Pot Value
+      </Text>
+      <Text style={[styles.heroValue, isLandscape && styles.heroValueLandscape]}>
+        {latestEntry ? formatCurrency(latestEntry.pot_value) : "—"}
+      </Text>
+      <Text style={[styles.heroDate, isLandscape && styles.heroDateLandscape]}>
+        {latestEntry ? `as of ${formatDate(latestEntry.entry_date)}` : ""}
+      </Text>
+      {insights?.has_data && insights.total_growth_pct != null ? (
+        <View style={styles.heroBadge}>
+          <Ionicons
+            name={insights.total_growth_pct >= 0 ? "trending-up" : "trending-down"}
+            size={14}
+            color="#fff"
+          />
+          <Text style={styles.heroBadgeText}>
+            {insights.total_growth_pct >= 0 ? "+" : ""}
+            {insights.total_growth_pct.toFixed(1)}% total growth
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+
+  const chartCard = (
+    <View
+      style={[
+        styles.chartCard,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+          borderRadius: colors.radius,
+        },
+      ]}
+    >
+      <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Performance</Text>
+      <View style={styles.chartWrapper}>
+        <PensionChart
+          data={chartData}
+          contributions={contributions}
+          height={isLandscape ? Math.round(height * 0.55) : 200}
+        />
+      </View>
+    </View>
+  );
+
   return (
     <ScrollView
       ref={scrollRef}
       style={{ backgroundColor: colors.background }}
-      contentContainerStyle={[
-        styles.container,
-        { paddingTop: topPad },
-      ]}
+      contentContainerStyle={[styles.container, { paddingTop: topPad, paddingHorizontal: hPad }]}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -146,7 +197,13 @@ export default function DashboardScreen() {
     >
       <View style={styles.headingRow}>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.heading, { color: colors.foreground }]}>
+          <Text
+            style={[
+              styles.heading,
+              isLandscape && styles.headingLandscape,
+              { color: colors.foreground },
+            ]}
+          >
             {name ? `Hello, ${name}` : "Pension Tracker"}
           </Text>
           {name ? (
@@ -163,6 +220,7 @@ export default function DashboardScreen() {
           <Ionicons name="color-palette-outline" size={20} color={colors.primary} />
         </TouchableOpacity>
       </View>
+
       <ThemePicker visible={showThemePicker} onClose={() => setShowThemePicker(false)} />
 
       {!hasData ? (
@@ -176,14 +234,8 @@ export default function DashboardScreen() {
             },
           ]}
         >
-          <Ionicons
-            name="wallet-outline"
-            size={48}
-            color={colors.mutedForeground}
-          />
-          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-            No snapshots yet
-          </Text>
+          <Ionicons name="wallet-outline" size={48} color={colors.mutedForeground} />
+          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No snapshots yet</Text>
           <Text style={[styles.emptySubtitle, { color: colors.mutedForeground }]}>
             Upload a screenshot of your pension to start tracking performance
           </Text>
@@ -201,76 +253,27 @@ export default function DashboardScreen() {
         </View>
       ) : (
         <>
-          <View
-            style={[
-              styles.heroCard,
-              {
-                backgroundColor: colors.primary,
-                borderRadius: colors.radius,
-              },
-            ]}
-          >
-            <Text style={styles.heroLabel}>Current Pot Value</Text>
-            <Text style={styles.heroValue}>
-              {latestEntry ? formatCurrency(latestEntry.pot_value) : "—"}
-            </Text>
-            <Text style={styles.heroDate}>
-              {latestEntry ? `as of ${formatDate(latestEntry.entry_date)}` : ""}
-            </Text>
-
-            {insights?.has_data && insights.total_growth_pct != null ? (
-              <View style={styles.heroBadge}>
-                <Ionicons
-                  name={
-                    insights.total_growth_pct >= 0
-                      ? "trending-up"
-                      : "trending-down"
-                  }
-                  size={14}
-                  color="#fff"
-                />
-                <Text style={styles.heroBadgeText}>
-                  {insights.total_growth_pct >= 0 ? "+" : ""}
-                  {insights.total_growth_pct.toFixed(1)}% total growth
-                </Text>
-              </View>
-            ) : null}
-          </View>
-
-          <View
-            style={[
-              styles.chartCard,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-                borderRadius: colors.radius,
-              },
-            ]}
-          >
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-              Performance
-            </Text>
-            <View style={styles.chartWrapper}>
-              <PensionChart data={chartData} contributions={contributions} height={200} />
+          {isLandscape ? (
+            <View style={styles.landscapeRow}>
+              <View style={styles.landscapeLeft}>{heroCard}</View>
+              <View style={styles.landscapeRight}>{chartCard}</View>
             </View>
-          </View>
+          ) : (
+            <>
+              {heroCard}
+              {chartCard}
+            </>
+          )}
 
-          {/* Contribution breakdown cards */}
           {latestCumulative && latestCumulative.total > 0 ? (
             <View style={styles.statsRow}>
               <View
                 style={[
                   styles.statCard,
-                  {
-                    backgroundColor: colors.card,
-                    borderColor: colors.border,
-                    borderRadius: colors.radius,
-                  },
+                  { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius },
                 ]}
               >
-                <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>
-                  From You
-                </Text>
+                <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>From You</Text>
                 <Text style={[styles.statValue, { color: colors.primary }]}>
                   {formatCurrency(latestCumulative.employee)}
                 </Text>
@@ -278,16 +281,10 @@ export default function DashboardScreen() {
               <View
                 style={[
                   styles.statCard,
-                  {
-                    backgroundColor: colors.card,
-                    borderColor: colors.border,
-                    borderRadius: colors.radius,
-                  },
+                  { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius },
                 ]}
               >
-                <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>
-                  Employer
-                </Text>
+                <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Employer</Text>
                 <Text style={[styles.statValue, { color: colors.accent }]}>
                   {formatCurrency(latestCumulative.employer)}
                 </Text>
@@ -296,16 +293,10 @@ export default function DashboardScreen() {
                 <View
                   style={[
                     styles.statCard,
-                    {
-                      backgroundColor: colors.card,
-                      borderColor: colors.border,
-                      borderRadius: colors.radius,
-                    },
+                    { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius },
                   ]}
                 >
-                  <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>
-                    Returns
-                  </Text>
+                  <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Returns</Text>
                   <Text
                     style={[
                       styles.statValue,
@@ -324,27 +315,14 @@ export default function DashboardScreen() {
               <View
                 style={[
                   styles.statCard,
-                  {
-                    backgroundColor: colors.card,
-                    borderColor: colors.border,
-                    borderRadius: colors.radius,
-                  },
+                  { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius },
                 ]}
               >
-                <Text
-                  style={[styles.statLabel, { color: colors.mutedForeground }]}
-                >
-                  Total Growth
-                </Text>
+                <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Total Growth</Text>
                 <Text
                   style={[
                     styles.statValue,
-                    {
-                      color:
-                        (insights.total_growth_pct ?? 0) >= 0
-                          ? colors.positive
-                          : colors.negative,
-                    },
+                    { color: (insights.total_growth_pct ?? 0) >= 0 ? colors.positive : colors.negative },
                   ]}
                 >
                   {insights.total_growth_pct != null
@@ -355,27 +333,14 @@ export default function DashboardScreen() {
               <View
                 style={[
                   styles.statCard,
-                  {
-                    backgroundColor: colors.card,
-                    borderColor: colors.border,
-                    borderRadius: colors.radius,
-                  },
+                  { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius },
                 ]}
               >
-                <Text
-                  style={[styles.statLabel, { color: colors.mutedForeground }]}
-                >
-                  Annual Return
-                </Text>
+                <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Annual Return</Text>
                 <Text
                   style={[
                     styles.statValue,
-                    {
-                      color:
-                        (insights.annualized_return_pct ?? 0) >= 0
-                          ? colors.positive
-                          : colors.negative,
-                    },
+                    { color: (insights.annualized_return_pct ?? 0) >= 0 ? colors.positive : colors.negative },
                   ]}
                 >
                   {insights.annualized_return_pct != null
@@ -390,40 +355,20 @@ export default function DashboardScreen() {
             <View
               style={[
                 styles.insightsCard,
-                {
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
-                  borderRadius: colors.radius,
-                },
+                { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius },
               ]}
             >
               <View style={styles.insightsHeader}>
                 <Ionicons name="bulb-outline" size={18} color={colors.accent} />
-                <Text
-                  style={[styles.sectionTitle, { color: colors.foreground }]}
-                >
-                  AI Insights
-                </Text>
+                <Text style={[styles.sectionTitle, { color: colors.foreground }]}>AI Insights</Text>
               </View>
               {insightsLoading ? (
                 <ActivityIndicator color={colors.primary} />
               ) : (
                 insights.insights.map((insight, i) => (
                   <View key={i} style={styles.insightRow}>
-                    <View
-                      style={[
-                        styles.insightDot,
-                        { backgroundColor: colors.accent },
-                      ]}
-                    />
-                    <Text
-                      style={[
-                        styles.insightText,
-                        { color: colors.foreground },
-                      ]}
-                    >
-                      {insight}
-                    </Text>
+                    <View style={[styles.insightDot, { backgroundColor: colors.accent }]} />
+                    <Text style={[styles.insightText, { color: colors.foreground }]}>{insight}</Text>
                   </View>
                 ))
               )}
@@ -432,7 +377,7 @@ export default function DashboardScreen() {
         </>
       )}
 
-      <View style={{ height: Platform.OS === "web" ? 34 : insets.bottom + 90 }} />
+      <View style={{ height: bottomPad }} />
     </ScrollView>
   );
 }
@@ -468,20 +413,44 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
     marginBottom: 4,
   },
+  headingLandscape: {
+    fontSize: 22,
+    marginBottom: 2,
+  },
   subheading: {
     fontSize: 13,
     fontFamily: "Inter_400Regular",
     marginBottom: 18,
   },
+  landscapeRow: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "flex-start",
+    marginBottom: 10,
+  },
+  landscapeLeft: {
+    flex: 4,
+  },
+  landscapeRight: {
+    flex: 6,
+  },
   heroCard: {
     padding: 24,
     marginBottom: 12,
+  },
+  heroCardLandscape: {
+    padding: 16,
+    marginBottom: 0,
   },
   heroLabel: {
     fontSize: 13,
     color: "rgba(255,255,255,0.7)",
     fontFamily: "Inter_500Medium",
     marginBottom: 6,
+  },
+  heroLabelLandscape: {
+    fontSize: 11,
+    marginBottom: 4,
   },
   heroValue: {
     fontSize: 40,
@@ -490,10 +459,18 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
     marginBottom: 4,
   },
+  heroValueLandscape: {
+    fontSize: 26,
+    letterSpacing: -0.5,
+    marginBottom: 3,
+  },
   heroDate: {
     fontSize: 13,
     color: "rgba(255,255,255,0.6)",
     fontFamily: "Inter_400Regular",
+  },
+  heroDateLandscape: {
+    fontSize: 11,
   },
   heroBadge: {
     flexDirection: "row",
