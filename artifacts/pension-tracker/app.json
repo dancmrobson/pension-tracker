@@ -36,6 +36,12 @@
       "expo-notifications",
       "expo-screen-orientation",
       [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow Pension Tracker to use Face ID to protect your financial data."
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "Allow Pension Tracker to access your photo library to upload pension screenshots."

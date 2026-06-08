@@ -13,7 +13,9 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { LockScreen } from "@/components/LockScreen";
 import { ThemeProvider } from "@/context/ThemeContext";
+import { BiometricLockProvider, useBiometricLock } from "@/context/BiometricLockContext";
 import { setupNotificationHandler } from "@/hooks/useNotifications";
 import { setBaseUrl } from "@workspace/api-client-react";
 
@@ -31,6 +33,12 @@ function RootLayoutNav() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
     </Stack>
   );
+}
+
+function AppWithLock() {
+  const { isLocked } = useBiometricLock();
+  if (isLocked) return <LockScreen />;
+  return <RootLayoutNav />;
 }
 
 export default function RootLayout() {
@@ -55,7 +63,9 @@ export default function RootLayout() {
         <ErrorBoundary>
           <QueryClientProvider client={queryClient}>
             <GestureHandlerRootView>
-              <RootLayoutNav />
+              <BiometricLockProvider>
+                <AppWithLock />
+              </BiometricLockProvider>
             </GestureHandlerRootView>
           </QueryClientProvider>
         </ErrorBoundary>

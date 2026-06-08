@@ -18,7 +18,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PensionChart } from "@/components/PensionChart";
 import type { ContributionPoint } from "@/components/PensionChart";
 import { ThemePicker } from "@/components/ThemePicker";
+import { SecuritySettingsSheet } from "@/components/SecuritySettingsSheet";
 import { useColors } from "@/hooks/useColors";
+import { useBiometricLock } from "@/context/BiometricLockContext";
 import { useUserName } from "@/hooks/useUserName";
 import {
   useGetPensionInsights,
@@ -58,6 +60,8 @@ export default function DashboardScreen() {
   const scrollRef = useRef(null);
   useScrollToTop(scrollRef);
   const [showThemePicker, setShowThemePicker] = useState(false);
+  const [showSecuritySheet, setShowSecuritySheet] = useState(false);
+  const { isEnabled: lockEnabled, isAvailable: lockAvailable } = useBiometricLock();
 
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
@@ -286,13 +290,28 @@ export default function DashboardScreen() {
           </Text>
         ) : null}
       </View>
-      <TouchableOpacity
-        onPress={() => setShowThemePicker(true)}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        style={[styles.gearBtn, { backgroundColor: colors.secondary }]}
-      >
-        <Ionicons name="color-palette-outline" size={20} color={colors.primary} />
-      </TouchableOpacity>
+      <View style={styles.headerBtns}>
+        {lockAvailable && (
+          <TouchableOpacity
+            onPress={() => setShowSecuritySheet(true)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={[styles.gearBtn, { backgroundColor: lockEnabled ? colors.primary + "18" : colors.secondary }]}
+          >
+            <Ionicons
+              name={lockEnabled ? "lock-closed" : "lock-open-outline"}
+              size={18}
+              color={lockEnabled ? colors.primary : colors.mutedForeground}
+            />
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          onPress={() => setShowThemePicker(true)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={[styles.gearBtn, { backgroundColor: colors.secondary }]}
+        >
+          <Ionicons name="color-palette-outline" size={20} color={colors.primary} />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -311,6 +330,7 @@ export default function DashboardScreen() {
       showsVerticalScrollIndicator={false}
     >
       <ThemePicker visible={showThemePicker} onClose={() => setShowThemePicker(false)} />
+      <SecuritySettingsSheet visible={showSecuritySheet} onClose={() => setShowSecuritySheet(false)} />
 
       {entriesLoading ? (
         <>
@@ -419,15 +439,19 @@ const styles = StyleSheet.create({
   headingRowLandscape: {
     marginBottom: 8,
   },
+  headerBtns: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+    marginTop: 4,
+    flexShrink: 0,
+  },
   gearBtn: {
     width: 38,
     height: 38,
     borderRadius: 19,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 4,
-    marginLeft: 8,
-    flexShrink: 0,
   },
   heading: {
     fontSize: 28,
