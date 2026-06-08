@@ -1,16 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   Modal,
   PanResponder,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-  useWindowDimensions,
 } from "react-native";
 
 import Svg, {
@@ -19,12 +17,10 @@ import Svg, {
   Line,
   LinearGradient,
   Path,
-  Rect,
   Stop,
   Text as SvgText,
 } from "react-native-svg";
 import { Ionicons } from "@expo/vector-icons";
-import * as ScreenOrientation from "expo-screen-orientation";
 import { useColors } from "@/hooks/useColors";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -53,7 +49,6 @@ type RangePreset = "3M" | "6M" | "1Y" | "3Y" | "5Y" | "All" | "Custom";
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const PORT_PAD: Padding = { left: 52, right: 16, top: 18, bottom: 44 };
-const LAND_PAD: Padding = { left: 64, right: 32, top: 36, bottom: 56 };
 const MAX_ZOOM = 10;
 const RANGE_PRESETS: RangePreset[] = ["3M", "6M", "1Y", "3Y", "5Y", "All", "Custom"];
 
@@ -90,10 +85,6 @@ function toDisplay(iso: string): string {
   if (!iso || !iso.match(/^\d{4}-\d{2}-\d{2}$/)) return "";
   const [y, m, d] = iso.split("-");
   return `${d}/${m}/${y}`;
-}
-
-function fromDateObj(date: Date): string {
-  return toIso(date);
 }
 
 function applyRangeFilter(
@@ -237,7 +228,7 @@ function buildFillPath(topPts: { x: number; y: number }[], bottomPts: { x: numbe
   return d;
 }
 
-// ─── ChartSvg (pure render, unchanged) ───────────────────────────────────────
+// ─── ChartSvg ─────────────────────────────────────────────────────────────────
 
 interface ChartSvgProps {
   data: DataPoint[];
@@ -298,13 +289,7 @@ function ChartSvg({ data, contributions, chartW, chartH, pad, activeDate, colors
 
   const activePt = activeDate ? (points.find((p) => p.date === activeDate) ?? null) : null;
   const activeIdx = activePt ? points.indexOf(activePt) : -1;
-
-  const TT_W = 160;
-  const TT_H = hasContribs && activeIdx >= 0 && cumulContribs ? 82 : 52;
-  const ttX = activePt
-    ? activePt.x + TT_W + 10 > pad.left + innerW ? activePt.x - TT_W - 8 : activePt.x + 8
-    : 0;
-  const ttY = pad.top + 4;
+  const latestPt = points[points.length - 1];
 
   return (
     <Svg width={chartW} height={chartH}>
@@ -319,6 +304,7 @@ function ChartSvg({ data, contributions, chartW, chartH, pad, activeDate, colors
         </LinearGradient>
       </Defs>
 
+      {/* Grid lines + Y-axis labels */}
       {yTicks.map((tick, i) => (
         <React.Fragment key={i}>
           <Line x1={pad.left} y1={tick.y} x2={pad.left + innerW} y2={tick.y}
@@ -330,6 +316,7 @@ function ChartSvg({ data, contributions, chartW, chartH, pad, activeDate, colors
         </React.Fragment>
       ))}
 
+      {/* X-axis labels (hidden when crosshair active) */}
       {!activePt && xLabels.map((lbl, i) => (
         <SvgText key={i} x={lbl.x} y={pad.top + innerH + fontSize + 6} fontSize={fontSize}
           fill={colors.mutedForeground} textAnchor="middle" fontFamily="Inter_400Regular">
@@ -337,11 +324,13 @@ function ChartSvg({ data, contributions, chartW, chartH, pad, activeDate, colors
         </SvgText>
       ))}
 
+      {/* Contribution bands */}
       {hasContribs && employeeBandFillPath ? <Path d={employeeBandFillPath} fill={colors.primary} opacity="0.18" /> : null}
       {hasContribs && employerBandFillPath ? <Path d={employerBandFillPath} fill={colors.accent} opacity="0.28" /> : null}
       {hasContribs && investReturnFillPath ? <Path d={investReturnFillPath} fill="url(#retGrad)" /> : null}
       {!hasContribs && potFillPath ? <Path d={potFillPath} fill="url(#potGrad)" /> : null}
 
+      {/* Contribution dashed lines */}
       {hasContribs && employeePts.length > 1 ? (
         <Path d={buildLinePath(employeePts)} stroke={colors.primary} strokeWidth="1.5"
           fill="none" strokeDasharray="5,3" opacity="0.7" />
@@ -351,27 +340,58 @@ function ChartSvg({ data, contributions, chartW, chartH, pad, activeDate, colors
           fill="none" strokeDasharray="5,3" opacity="0.85" />
       ) : null}
 
+      {/* Main value line */}
       {points.length > 1 ? (
         <Path d={linePath} stroke={lineColor} strokeWidth="2.5"
           fill="none" strokeLinecap="round" strokeLinejoin="round" />
       ) : null}
 
+      {/* Data point dots — latest has a glow ring */}
       {points.map((pt, i) => {
         if (pt.date === activeDate) return null;
+        const isLatest = i === points.length - 1;
         return (
-          <Circle key={i} cx={pt.x} cy={pt.y}
-            r={i === points.length - 1 ? 5 : 3}
-            fill={i === points.length - 1 ? colors.accent : lineColor}
-            stroke="#fff" strokeWidth="1.5" />
+          <React.Fragment key={i}>
+            {isLatest && (
+              <Circle cx={pt.x} cy={pt.y} r={14}
+                fill={colors.accent} opacity="0.12" />
+            )}
+            <Circle cx={pt.x} cy={pt.y}
+              r={isLatest ? 6 : 3}
+              fill={isLatest ? colors.accent : lineColor}
+              stroke="#fff" strokeWidth={isLatest ? 2 : 1.5} />
+          </React.Fragment>
         );
       })}
 
+      {/* Crosshair + active dot */}
       {activePt && (
         <>
-          <Line x1={activePt.x} y1={pad.top} x2={activePt.x} y2={pad.top + innerH}
-            stroke={colors.foreground} strokeWidth="1" strokeDasharray="4,3" opacity="0.25" />
-          <Circle cx={activePt.x} cy={activePt.y} r={7} fill={colors.accent} stroke="#fff" strokeWidth="2.5" />
+          <Line
+            x1={activePt.x} y1={pad.top}
+            x2={activePt.x} y2={pad.top + innerH}
+            stroke={colors.foreground} strokeWidth="1"
+            strokeDasharray="4,3" opacity="0.3"
+          />
+          {/* Date label along crosshair */}
+          <SvgText
+            x={activePt.x}
+            y={pad.top + innerH + fontSize + 6}
+            fontSize={fontSize}
+            fill={colors.primary}
+            textAnchor="middle"
+            fontFamily="Inter_600SemiBold"
+          >
+            {formatShortDate(activePt.date)}
+          </SvgText>
 
+          {/* Active dot — larger with outer ring */}
+          <Circle cx={activePt.x} cy={activePt.y} r={12}
+            fill={colors.accent} opacity="0.18" />
+          <Circle cx={activePt.x} cy={activePt.y} r={7}
+            fill={colors.accent} stroke="#fff" strokeWidth="2.5" />
+
+          {/* Contribution crosshair dots */}
           {hasContribs && cumulContribs && activeIdx >= 0 ? (
             <>
               <Circle cx={activePt.x} cy={yOf(cumulContribs[activeIdx].employee)}
@@ -380,35 +400,130 @@ function ChartSvg({ data, contributions, chartW, chartH, pad, activeDate, colors
                 r={4} fill={colors.accent} stroke="#fff" strokeWidth="1.5" />
             </>
           ) : null}
-
-          <Rect x={ttX} y={ttY} width={TT_W} height={TT_H} rx="10" fill={colors.primary} />
-          <SvgText x={ttX + TT_W / 2} y={ttY + 16} fontSize={fontSize}
-            fill="rgba(255,255,255,0.7)" textAnchor="middle" fontFamily="Inter_400Regular">
-            {formatFullDate(activePt.date)}
-          </SvgText>
-          <SvgText x={ttX + TT_W / 2} y={ttY + 34} fontSize={fontSize + 4}
-            fill="#fff" textAnchor="middle" fontFamily="Inter_700Bold">
-            {formatCurrency(activePt.value)}
-          </SvgText>
-          {hasContribs && cumulContribs && activeIdx >= 0 ? (
-            <>
-              <SvgText x={ttX + TT_W / 2} y={ttY + 52} fontSize={fontSize - 1}
-                fill="rgba(255,255,255,0.65)" textAnchor="middle" fontFamily="Inter_400Regular">
-                {`Employee: ${formatCurrency(cumulContribs[activeIdx].employee)}`}
-              </SvgText>
-              <SvgText x={ttX + TT_W / 2} y={ttY + 68} fontSize={fontSize - 1}
-                fill="rgba(255,255,255,0.65)" textAnchor="middle" fontFamily="Inter_400Regular">
-                {`Employer: ${formatCurrency(cumulContribs[activeIdx].employer)}`}
-              </SvgText>
-            </>
-          ) : null}
         </>
+      )}
+
+      {/* "NOW" label above latest point (when no crosshair active) */}
+      {!activePt && latestPt && (
+        <SvgText
+          x={latestPt.x}
+          y={latestPt.y - 14}
+          fontSize={fontSize - 1}
+          fill={colors.accent}
+          textAnchor="middle"
+          fontFamily="Inter_600SemiBold"
+          opacity="0.85"
+        >
+          NOW
+        </SvgText>
       )}
     </Svg>
   );
 }
 
-// ─── DatePickerModal (pure JS, no native modules — works in Expo Go) ─────────
+// ─── Native info panel ────────────────────────────────────────────────────────
+
+interface InfoPanelProps {
+  date: string;
+  value: number;
+  prevValue: number | null;
+  contribs: { employee: number; employer: number; total: number } | null;
+  isLive: boolean;
+  colors: ReturnType<typeof useColors>;
+}
+
+function NativeInfoPanel({ date, value, prevValue, contribs, isLive, colors }: InfoPanelProps) {
+  const growthAmt = prevValue !== null ? value - prevValue : null;
+  const growthPct = prevValue !== null && prevValue > 0
+    ? ((value - prevValue) / prevValue) * 100 : null;
+  const isUp = growthAmt !== null ? growthAmt >= 0 : true;
+  const badgeColor = isUp ? colors.positive : colors.negative;
+
+  return (
+    <View style={[panelStyles.container, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}>
+      <View style={panelStyles.left}>
+        <Text style={[panelStyles.dateLabel, { color: colors.mutedForeground }]}>
+          {isLive ? `Latest · ${formatFullDate(date)}` : formatFullDate(date)}
+        </Text>
+        <Text style={[panelStyles.value, { color: colors.foreground }]}>
+          {formatCurrency(value)}
+        </Text>
+        {contribs && contribs.total > 0 ? (
+          <Text style={[panelStyles.contribLine, { color: colors.mutedForeground }]}>
+            You {formatCurrency(contribs.employee)}
+            {"  ·  "}
+            Employer {formatCurrency(contribs.employer)}
+          </Text>
+        ) : null}
+      </View>
+
+      {growthPct !== null && growthAmt !== null ? (
+        <View style={[panelStyles.badge, { backgroundColor: badgeColor + "1A" }]}>
+          <Ionicons
+            name={isUp ? "trending-up" : "trending-down"}
+            size={14}
+            color={badgeColor}
+          />
+          <Text style={[panelStyles.badgePct, { color: badgeColor }]}>
+            {isUp ? "+" : ""}{growthPct.toFixed(2)}%
+          </Text>
+          <Text style={[panelStyles.badgeAmt, { color: badgeColor }]}>
+            {isUp ? "+" : ""}{formatCurrency(growthAmt)}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+const panelStyles = StyleSheet.create({
+  container: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 10,
+    gap: 10,
+  },
+  left: {
+    flex: 1,
+    gap: 2,
+  },
+  dateLabel: {
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+  },
+  value: {
+    fontSize: 22,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: -0.5,
+  },
+  contribLine: {
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    marginTop: 1,
+  },
+  badge: {
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    flexShrink: 0,
+  },
+  badgePct: {
+    fontSize: 15,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: -0.3,
+  },
+  badgeAmt: {
+    fontSize: 11,
+    fontFamily: "Inter_500Medium",
+  },
+});
+
+// ─── DatePickerModal ──────────────────────────────────────────────────────────
 
 function DatePickerModal({
   label,
@@ -449,8 +564,11 @@ function DatePickerModal({
 
   return (
     <Modal transparent animationType="fade" onRequestClose={onCancel}>
-      <Pressable style={styles.modalOverlay} onPress={onCancel}>
-        <Pressable style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onCancel}>
+        <TouchableOpacity
+          style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+          activeOpacity={1}
+        >
           <Text style={[styles.modalLabel, { color: colors.mutedForeground }]}>{label}</Text>
           <TextInput
             style={[styles.modalInput, { color: colors.foreground, backgroundColor: colors.secondary, borderColor: colors.border }]}
@@ -471,15 +589,15 @@ function DatePickerModal({
               <Text style={[styles.modalBtnText, { color: colors.mutedForeground }]}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.modalBtn, styles.modalBtnConfirm, { backgroundColor: raw.length === 8 ? colors.primary : colors.secondary }]}
+              style={[styles.modalBtn, { backgroundColor: raw.length === 8 ? colors.primary : colors.secondary }]}
               onPress={handleConfirm}
               disabled={raw.length !== 8}
             >
               <Text style={[styles.modalBtnText, { color: raw.length === 8 ? "#fff" : colors.mutedForeground }]}>Done</Text>
             </TouchableOpacity>
           </View>
-        </Pressable>
-      </Pressable>
+        </TouchableOpacity>
+      </TouchableOpacity>
     </Modal>
   );
 }
@@ -488,70 +606,21 @@ function DatePickerModal({
 
 export function PensionChart({ data, contributions, height = 220 }: PensionChartProps) {
   const colors = useColors();
-  const { width: winW, height: winH } = useWindowDimensions();
-  const autoLandscape = winW > winH && Platform.OS !== "web";
 
-  // ── UI state ──
   const [containerWidth, setContainerWidth] = useState(0);
-  const [modalSize, setModalSize] = useState({ w: 0, h: 0 });
   const [activeDate, setActiveDate] = useState<string | null>(null);
   const [zoomScale, setZoomScale] = useState(1);
   const [scrollOffset, setScrollOffset] = useState(0);
-  const [fullscreen, setFullscreen] = useState(false);
   const [rangePreset, setRangePreset] = useState<RangePreset>("All");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [showFromPicker, setShowFromPicker] = useState(false);
   const [showToPicker, setShowToPicker] = useState(false);
 
-  const modalVisible = fullscreen;
-
-  // Capture current landscape state in a ref so the lock effect can read it
-  // without adding autoLandscape as a reactive dep (which would re-run cleanup
-  // on every rotation and cause flicker / crashes on New Architecture).
-  const autoLandscapeRef = useRef(autoLandscape);
-  autoLandscapeRef.current = autoLandscape;
-
-  // Lock to landscape when fullscreen button opens the modal; unlock on close.
-  // Skip lockAsync entirely if the device is already in landscape — calling it
-  // redundantly crashes on New Architecture + TestFlight.
-  useEffect(() => {
-    if (Platform.OS === "web") return;
-    if (fullscreen) {
-      if (!autoLandscapeRef.current) {
-        ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
-      }
-      return () => {
-        ScreenOrientation.unlockAsync().catch(() => {});
-      };
-    }
-  }, [fullscreen]);
-
-  // "Rotate to return": once the fullscreen modal has been landscape (lockAsync
-  // succeeded or user rotated manually), rotating back to portrait auto-closes.
-  // If lockAsync failed (device stayed portrait), wasLandscape stays false and
-  // the user dismisses via the ✕ button instead.
-  const wasLandscapeWhileFullscreen = useRef(false);
-  useEffect(() => {
-    if (Platform.OS === "web") return;
-    if (fullscreen && autoLandscape) {
-      wasLandscapeWhileFullscreen.current = true;
-    } else if (fullscreen && !autoLandscape && wasLandscapeWhileFullscreen.current) {
-      wasLandscapeWhileFullscreen.current = false;
-      setFullscreen(false);
-      setActiveDate(null);
-    }
-    if (!fullscreen) {
-      wasLandscapeWhileFullscreen.current = false;
-    }
-  }, [fullscreen, autoLandscape]);
-
-  // ── Gesture refs (stable across renders, safe for PanResponder closures) ──
+  // ── Gesture refs ──
   const portraitPtsRef = useRef<ChartPoint[]>([]);
-  const modalPtsRef = useRef<ChartPoint[]>([]);
   const zoomRef = useRef(1);
   const portStartX = useRef(0);
-  const landStartX = useRef(0);
   const pinchStartDist = useRef<number | null>(null);
   const pinchStartZoom = useRef(1);
   const gestureMode = useRef<"idle" | "undecided" | "crosshair" | "scroll" | "pinch">("idle");
@@ -562,7 +631,6 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
   const rangeFilteredLenRef = useRef(0);
   const visibleLenRef = useRef(0);
 
-  // Mirror state into refs (synchronously in render for PanResponder access)
   zoomRef.current = zoomScale;
   scrollOffsetRef.current = scrollOffset;
 
@@ -580,11 +648,10 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
     return rangeFilteredData.slice(off, off + count);
   }, [rangeFilteredData, zoomScale, scrollOffset]);
 
-  // Update measurement refs in render
   rangeFilteredLenRef.current = rangeFilteredData.length;
   visibleLenRef.current = visibleData.length;
 
-  // ── Geometry (for hit-test refs used by PanResponder) ──
+  // ── Geometry ──
   const hasContribsForScale = (contributions?.length ?? 0) > 0;
   const cumulForScale = useMemo(
     () => hasContribsForScale && contributions
@@ -603,16 +670,18 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
       : { points: [] as ChartPoint[], xLabels: [], yTicks: [], innerW: 0, innerH: 0, yOf: (_: number) => 0 },
     [visibleData, containerWidth, height, extraVals]
   );
-  const modalGeo = useMemo(
-    () => modalSize.w > 0
-      ? computeGeometry(visibleData, modalSize.w, modalSize.h, LAND_PAD, extraVals)
-      : { points: [] as ChartPoint[], xLabels: [], yTicks: [], innerW: 0, innerH: 0, yOf: (_: number) => 0 },
-    [visibleData, modalSize.w, modalSize.h, extraVals]
-  );
 
   portraitPtsRef.current = portraitGeo.points;
-  modalPtsRef.current = modalGeo.points;
   innerWRef.current = portraitGeo.innerW;
+
+  // ── Info panel data ──
+  const displayDate = activeDate ?? (data.length > 0 ? data[data.length - 1].date : null);
+  const displayEntryIdx = displayDate ? data.findIndex((d) => d.date === displayDate) : -1;
+  const displayEntry = displayEntryIdx >= 0 ? data[displayEntryIdx] : null;
+  const prevEntry = displayEntryIdx > 0 ? data[displayEntryIdx - 1] : null;
+  const displayContribs = displayDate && contributions && contributions.length > 0
+    ? computeCumulativeContribs([displayDate], contributions)[0]
+    : null;
 
   // ── Actions ──
   const handleRangeChange = (preset: RangePreset) => {
@@ -632,7 +701,7 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
     setActiveDate(null);
   };
 
-  // ── Portrait PanResponder ──
+  // ── PanResponder ──
   const portraitPan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -648,7 +717,6 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
         } else {
           const now = Date.now();
           if (now - lastTapTime.current < 280) {
-            // Double-tap → reset
             setZoomScale(1);
             zoomRef.current = 1;
             setScrollOffset(0);
@@ -667,7 +735,6 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
       onPanResponderMove: (evt, gs) => {
         const touches = evt.nativeEvent.touches;
 
-        // Upgrade to pinch if second finger appears
         if (touches.length >= 2 && gestureMode.current !== "pinch") {
           pinchStartDist.current = pinchDistance(touches);
           pinchStartZoom.current = zoomRef.current;
@@ -684,10 +751,8 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
             ));
             const totalLen = rangeFilteredLenRef.current;
             const newVisCount = Math.max(2, Math.ceil(totalLen / newZoom));
-
             let newOff: number;
             if (pinchStartZoom.current <= 1.05) {
-              // Anchored to right (latest data) when starting from full view
               newOff = Math.max(0, totalLen - newVisCount);
             } else {
               const oldVisCount = Math.max(2, Math.ceil(totalLen / pinchStartZoom.current));
@@ -697,7 +762,6 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
                 Math.max(0, totalLen - newVisCount)
               ));
             }
-
             setZoomScale(newZoom);
             zoomRef.current = newZoom;
             setScrollOffset(newOff);
@@ -706,7 +770,6 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
           return;
         }
 
-        // Resolve undecided gesture mode
         if (gestureMode.current === "undecided") {
           const absDx = Math.abs(gs.dx);
           const absDy = Math.abs(gs.dy);
@@ -747,24 +810,7 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
     })
   ).current;
 
-  // ── Modal (landscape / fullscreen) PanResponder — crosshair only ──
-  const modalPan = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt) => {
-        landStartX.current = evt.nativeEvent.locationX;
-        setActiveDate(findNearest(modalPtsRef.current, landStartX.current));
-      },
-      onPanResponderMove: (_, gs) => {
-        setActiveDate(findNearest(modalPtsRef.current, landStartX.current + gs.dx));
-      },
-      onPanResponderRelease: () => setActiveDate(null),
-      onPanResponderTerminate: () => setActiveDate(null),
-    })
-  ).current;
-
-  // ── Scroll progress indicator ──
+  // ── Scroll indicator ──
   const showZoomUI = zoomScale > 1.08;
   const thumbFraction = rangeFilteredData.length > 0
     ? Math.max(0.08, visibleData.length / rangeFilteredData.length)
@@ -799,7 +845,11 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
               key={preset}
               style={[
                 styles.rangeChip,
-                { backgroundColor: active ? colors.primary : colors.secondary },
+                {
+                  backgroundColor: active ? colors.primary : colors.secondary,
+                  borderWidth: 1,
+                  borderColor: active ? colors.primary : colors.border,
+                },
               ]}
               onPress={() => handleRangeChange(preset)}
               activeOpacity={0.75}
@@ -823,7 +873,6 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
       {/* ── Custom date range inputs ── */}
       {rangePreset === "Custom" && (
         <View style={styles.customDateRow}>
-          {/* From date */}
           <TouchableOpacity
             style={[
               styles.dateBtn,
@@ -840,7 +889,6 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
 
           <Text style={[styles.dateSep, { color: colors.mutedForeground }]}>→</Text>
 
-          {/* To date */}
           <TouchableOpacity
             style={[
               styles.dateBtn,
@@ -855,7 +903,6 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
             </Text>
           </TouchableOpacity>
 
-          {/* Clear button */}
           {(customFrom || customTo) && (
             <TouchableOpacity
               onPress={() => {
@@ -872,18 +919,14 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
         </View>
       )}
 
-      {/* ── Date picker modal (pure JS, works in Expo Go) ── */}
+      {/* ── Date picker modal ── */}
       {(showFromPicker || showToPicker) && (
         <DatePickerModal
           label={showFromPicker ? "From date" : "To date"}
           initialValue={showFromPicker ? toDisplay(customFrom) : toDisplay(customTo)}
           colors={colors}
           onConfirm={(iso) => {
-            if (showFromPicker) {
-              setCustomFrom(iso);
-            } else {
-              setCustomTo(iso);
-            }
+            if (showFromPicker) setCustomFrom(iso); else setCustomTo(iso);
             setScrollOffset(0);
             scrollOffsetRef.current = 0;
             setShowFromPicker(false);
@@ -893,6 +936,18 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
             setShowFromPicker(false);
             setShowToPicker(false);
           }}
+        />
+      )}
+
+      {/* ── Native info panel ── */}
+      {displayEntry && (
+        <NativeInfoPanel
+          date={displayEntry.date}
+          value={displayEntry.value}
+          prevValue={prevEntry?.value ?? null}
+          contribs={displayContribs}
+          isLive={activeDate === null}
+          colors={colors}
         />
       )}
 
@@ -925,7 +980,7 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
             )}
           </View>
 
-          {/* Scroll progress bar (visible when zoomed in) */}
+          {/* Scroll progress bar */}
           {showZoomUI && (
             <View style={[styles.scrollTrack, { backgroundColor: colors.secondary }]}>
               <View
@@ -941,25 +996,23 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
             </View>
           )}
 
-          {/* Overlay row: zoom badge + reset + expand button */}
-          <View style={styles.overlayRow}>
-            {showZoomUI ? (
-              <TouchableOpacity onPress={resetView} style={styles.zoomResetRow} activeOpacity={0.7}>
-                <Text style={[styles.zoomBadge, { color: colors.mutedForeground }]}>
-                  {zoomScale.toFixed(1)}× ·{" "}
-                  {scrollFraction > 0.02 && scrollFraction < 0.98 ? "drag to scroll · " : ""}
-                  tap to reset
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-            <Pressable
-              style={[styles.expandBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-              hitSlop={12}
-              onPress={() => { setFullscreen(true); setActiveDate(null); }}
-            >
-              <Text style={[styles.expandIcon, { color: colors.mutedForeground }]}>⛶</Text>
-            </Pressable>
-          </View>
+          {/* Zoom badge */}
+          {showZoomUI && (
+            <TouchableOpacity onPress={resetView} style={styles.zoomResetRow} activeOpacity={0.7}>
+              <Text style={[styles.zoomBadge, { color: colors.mutedForeground }]}>
+                {zoomScale.toFixed(1)}× ·{" "}
+                {scrollFraction > 0.02 && scrollFraction < 0.98 ? "drag to scroll · " : ""}
+                tap to reset
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Touch hint (shown only when not zoomed) */}
+          {!showZoomUI && (
+            <Text style={[styles.touchHint, { color: colors.mutedForeground }]}>
+              Touch &amp; drag to explore · Pinch to zoom
+            </Text>
+          )}
 
           {/* Contribution legend */}
           {hasContribs && (
@@ -980,48 +1033,6 @@ export function PensionChart({ data, contributions, height = 220 }: PensionChart
           )}
         </View>
       )}
-
-      {/* ── Fullscreen / landscape modal ── */}
-      <Modal
-        visible={modalVisible}
-        animationType="none"
-        transparent={false}
-        statusBarTranslucent={false}
-        onRequestClose={() => setFullscreen(false)}
-      >
-        <View
-          style={[styles.fullscreen, { backgroundColor: colors.background }]}
-          onLayout={(e) => setModalSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
-          {...modalPan.panHandlers}
-        >
-          {modalSize.w > 0 && (
-            <ChartSvg
-              data={visibleData}
-              contributions={contributions}
-              chartW={modalSize.w}
-              chartH={modalSize.h}
-              pad={LAND_PAD}
-              activeDate={activeDate}
-              colors={colors}
-              fontSize={12}
-            />
-          )}
-
-          <Pressable
-            style={[styles.closeBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-            hitSlop={12}
-            onPress={() => { setFullscreen(false); setActiveDate(null); }}
-          >
-            <Text style={[styles.closeIcon, { color: colors.foreground }]}>✕</Text>
-          </Pressable>
-
-          {!activeDate && (
-            <Text style={[styles.hint, { color: colors.mutedForeground }]}>
-              {"Touch & drag to scan · Rotate to return"}
-            </Text>
-          )}
-        </View>
-      </Modal>
     </>
   );
 }
@@ -1068,15 +1079,6 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     flex: 1,
   },
-  dateInputWeb: {
-    flex: 1,
-    height: 36,
-    paddingHorizontal: 10,
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    borderWidth: 1,
-    borderRadius: 8,
-  },
   dateSep: {
     fontSize: 14,
     fontFamily: "Inter_400Regular",
@@ -1101,40 +1103,30 @@ const styles = StyleSheet.create({
     height: 3,
     borderRadius: 2,
   },
-  overlayRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    marginTop: 4,
-    paddingHorizontal: 4,
-    minHeight: 28,
-  },
   zoomResetRow: {
-    flex: 1,
+    paddingHorizontal: 4,
+    paddingTop: 4,
+    minHeight: 24,
   },
   zoomBadge: {
     fontSize: 11,
     opacity: 0.7,
     fontFamily: "Inter_400Regular",
   },
-  expandBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  expandIcon: {
-    fontSize: 14,
-    lineHeight: 16,
+  touchHint: {
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    textAlign: "center",
+    opacity: 0.45,
+    marginTop: 6,
+    marginBottom: 2,
   },
   legend: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12,
     paddingHorizontal: 4,
-    paddingTop: 6,
+    paddingTop: 8,
     paddingBottom: 2,
   },
   legendItem: {
@@ -1157,32 +1149,6 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 14,
-    fontFamily: "Inter_400Regular",
-  },
-  fullscreen: {
-    flex: 1,
-  },
-  closeBtn: {
-    position: "absolute",
-    top: 48,
-    right: 20,
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  closeIcon: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  hint: {
-    position: "absolute",
-    bottom: 16,
-    alignSelf: "center",
-    fontSize: 12,
-    opacity: 0.5,
     fontFamily: "Inter_400Regular",
   },
   modalOverlay: {
@@ -1235,7 +1201,6 @@ const styles = StyleSheet.create({
   modalBtnCancel: {
     borderWidth: 1,
   },
-  modalBtnConfirm: {},
   modalBtnText: {
     fontSize: 15,
     fontFamily: "Inter_500Medium",
