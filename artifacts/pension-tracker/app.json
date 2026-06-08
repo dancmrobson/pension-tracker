@@ -33,6 +33,7 @@
       ],
       "expo-font",
       "expo-web-browser",
+      "expo-notifications",
       "expo-screen-orientation",
       [
         "expo-image-picker",

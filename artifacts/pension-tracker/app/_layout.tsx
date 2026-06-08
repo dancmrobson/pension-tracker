@@ -14,7 +14,10 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ThemeProvider } from "@/context/ThemeContext";
+import { setupNotificationHandler } from "@/hooks/useNotifications";
 import { setBaseUrl } from "@workspace/api-client-react";
+
+setupNotificationHandler();
 
 setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN}`);
 

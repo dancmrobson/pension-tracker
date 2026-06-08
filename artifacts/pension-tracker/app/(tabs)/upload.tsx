@@ -23,6 +23,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useColors } from "@/hooks/useColors";
+import {
+  requestNotificationPermissions,
+  scheduleUploadReminder,
+} from "@/hooks/useNotifications";
 import { useUserName } from "@/hooks/useUserName";
 import {
   useAnalyzePensionImage,
@@ -69,6 +73,9 @@ export default function UploadScreen() {
         queryClient.invalidateQueries({ queryKey: getListPensionEntriesQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetPensionInsightsQueryKey() });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        requestNotificationPermissions().then((granted) => {
+          if (granted) scheduleUploadReminder();
+        });
         Alert.alert("Saved", "Pension entry saved successfully.", [
           {
             text: "View Dashboard",

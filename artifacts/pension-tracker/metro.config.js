@@ -6,8 +6,13 @@ const workspaceRoot = path.resolve(projectRoot, "../..");
 
 const config = getDefaultConfig(projectRoot);
 
-// Watch the whole monorepo so pnpm-store symlinks resolve
-config.watchFolders = [workspaceRoot];
+// Watch only the workspace directories Metro actually needs —
+// avoids FallbackWatcher failures on transient/deleted dirs under .local
+config.watchFolders = [
+  path.resolve(workspaceRoot, "lib"),
+  path.resolve(workspaceRoot, "artifacts"),
+  path.resolve(workspaceRoot, "node_modules"),
+];
 
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, "node_modules"),
