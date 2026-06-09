@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "4ec3510f-12dd-418d-8cfe-bbaef12e338c"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.dancmrobson.workspace",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
+  }
+}
